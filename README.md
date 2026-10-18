@@ -17,6 +17,12 @@
   <img src="https://img.shields.io/badge/License-GPLv3-orange" alt="License">
 </p>
 
+> [!NOTE]
+> **本仓库是 [hoowhoami/EchoMusic](https://github.com/hoowhoami/EchoMusic) 的第三方二改分支（fork），非官方版本。**
+> 上游原作者：**hoowhoami**（署名与许可证完整保留，见 [LICENSE](LICENSE)）。
+> 本分支基于上游 `v2.3.2-beta.17`，唯一的实质性改动是**重新移植「每日会员领取」功能**，其余代码与上游保持一致。
+> 改动细节、构建与运行方式见 [「二改版改动说明」](#-二改版改动说明)。
+
 ---
 
 ## ✨ 核心特性
@@ -255,6 +261,68 @@ EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、�
 - [完整插件开发指南](https://github.com/hoowhoami/EchoMusicPlugins/blob/main/docs/plugin-development.md)
 - [官方插件源与示例](https://github.com/hoowhoami/EchoMusicPlugins)
 
+## 🧩 二改版改动说明
+
+### 背景
+
+上游在提交 `b29bbe3`（*feat: remove vip claum functions*，2026-07-04）中移除了「每日会员领取」相关实现，最后一个保留该功能的版本是 `v2.2.8-beta.5`。
+
+本分支基于上游 `v2.3.2-beta.17` 重新移植该功能。上游 `src/renderer/api/user.ts` 中的 `claimDayVip` / `upgradeDayVip` / `getVipMonthRecord` / `getServerNow` 四个接口仍然存在且可用，因此本次移植**没有改动任何网络请求接口**，只恢复了调用层的状态管理、界面与触发时机，并按当前版本的架构做了适配。
+
+### 改动清单
+
+| 文件 | 类型 | 改动内容 |
+| --- | --- | --- |
+| `src/renderer/utils/dailyVip.ts` | 新增 | 统一的功能开关判断，以及「账号 + 服务端日期」维度的每日去重逻辑，保证启动 / 登录 / 进入个人页三条触发路径每天各自最多执行一次 |
+| `src/renderer/stores/setting.ts` | 修改 | 恢复持久化开关 `vipClaimEnabled`（功能总开关，隐藏）与 `autoReceiveVip`（启动自动领取），新增 `setVipClaimEnabled()` |
+| `src/renderer/stores/user.ts` | 修改 | 新增 `autoReceiveVipIfNeeded()`、`setClaimStatus()`、`getServerToday()` 与 `isTvipClaimedToday` / `isSvipClaimedToday` / `isAutoClaimingVip` 状态；登出时重置；这些状态不进入持久化 |
+| `src/renderer/views/Loading.vue` | 修改 | 启动流程中在页面跳转前执行一次自动领取 |
+| `src/renderer/views/Login.vue` | 修改 | 登录成功后触发一次自动领取 |
+| `src/renderer/views/Profile.vue` | 修改 | 个人页新增「每日权益」卡片：手动领取畅听会员、升级概念会员，并展示今日领取状态 |
+| `src/renderer/views/settings/components/AboutSettingsSection.vue` | 修改 | 恢复彩蛋：设置 → 关于，连点「当前版本」5 次解锁功能（带撒花反馈） |
+| `src/renderer/views/settings/components/ExperimentalSettingsSection.vue` | 修改 | 功能解锁后，在「实验功能」中显示「自动领取每日会员」开关 |
+| `src/main/networkSettings.ts` | 修改 | 修复本地服务的 axios ESM/CJS 互操作：`require('axios')` 取 `default`，避免 `Cannot set properties of undefined (setting 'timeout')` |
+
+### 使用方式
+
+1. 打开 **设置 → 关于**，连续点击「当前版本」**5 次**，解锁每日会员领取功能（出现撒花动画）。
+2. 打开 **设置 → 实验功能**，打开「**自动领取每日会员**」开关，之后每次启动 / 登录都会自动领取并尝试升级。
+3. 也可以随时在 **个人主页** 的「每日权益」卡片中手动领取畅听会员、升级概念会员，卡片会显示今日领取状态。
+
+> 再次连点 5 次可关闭总开关，关闭时会同时停用自动领取。以上开关均为本地设置，不会上传。
+
+### 构建与运行
+
+```bash
+git clone --recurse-submodules <本仓库地址>
+cd EchoMusic
+
+# 1) 安装依赖（server/ 是子模块，缺失会导致本地服务起不来、接口 502）
+git submodule update --init --recursive server
+pnpm install
+
+# 2) 准备原生模块（native/<模块名>/<模块名>.node，Windows 需 8 个）
+#    可从上游 Release 的 CI 产物 EchoMusic-native-windows-x64 解压到仓库根目录
+
+# 3) 开发运行
+pnpm dev
+
+# 4) 打包
+pnpm build          # 类型检查 + Vite 构建 + electron-builder
+```
+
+Windows 下若 `pnpm install` 报 `EPERM`，可改用：
+
+```bash
+pnpm install --config.node-linker=hoisted --config.package-import-method=copy
+```
+
+### 重要提示
+
+- 本仓库**不包含**任何原生二进制（`.node`）与 `node_modules`，需自行构建或从上游 CI 产物获取。
+- 本分支不中转任何音频数据，也不上传任何账号信息；每日会员领取仅调用登录账号下既有的官方接口。
+- 仅供个人学习与技术交流，请勿用于商业用途。
+
 ## 🏗️ 编译发布
 
 项目使用 GitHub Actions 进行自动化构建。每当推送 `v*` 格式的 Tag 时，会自动触发多平台构建并将二进制包上传至 Releases。
@@ -340,3 +408,10 @@ xattr -cr /Applications/EchoMusic.app && codesign --force --deep --sign - /Appli
 基于 [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html) 协议发布，完整协议文本见 [LICENSE](LICENSE)。
 
 第三方依赖与授权说明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+### 署名与归属
+
+- 本项目是第三方二改分支，原始项目为 [hoowhoami/EchoMusic](https://github.com/hoowhoami/EchoMusic)，原作者：**hoowhoami**。
+- 上游版权与许可证声明（GPL-3.0-only）在本仓库中完整保留，未做任何修改或移除。
+- 本分支在 GPL-3.0-only 下同样开源，二改部分（见「二改版改动说明」）沿用相同协议。
+- 若你是上游作者并希望本分支下架或调整，请通过 Issues 联系。
