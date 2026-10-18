@@ -73,3 +73,17 @@ cloudflare/**/*.local.toml
 
 .planning
 .agentsroom
+
+# Packaged / generated artifacts (仅仓库根目录，避免误伤 vendor 里的压缩包)
+/*.zip
+/*.7z
+*.blockmap
+*.asar
+dist-ssr/
+release/
+
+# Editor / tooling leftovers
+.workbuddy/
+.claude/
+.aider*
+*.code-workspace
