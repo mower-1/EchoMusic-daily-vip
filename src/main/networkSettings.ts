@@ -157,7 +157,12 @@ export const applyKugouApiNetworkSettings = (
     // Keep this outside server/ so the submodule stays untouched while its axios instance
     // still receives app-level network defaults.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const axios = require(path.join(targetServerPath, 'node_modules', 'axios'));
+    const axiosModule = require(path.join(targetServerPath, 'node_modules', 'axios'));
+    // server 依赖的 axios 1.x 走 ESM 入口，CJS require 拿到的是命名空间对象，需取 default
+    const axios = (
+      axiosModule?.default ?? axiosModule
+    ) as import('axios').AxiosStatic;
+    if (!axios?.defaults) throw new Error('axios instance is unavailable');
     axios.defaults.timeout = Math.max(0, Math.round(settings.kugouApiTimeoutSecs * 1000));
     axios.defaults.adapter = createElectronAxiosAdapter(axios, KUGOU_API_SESSION_PARTITION);
     log.info('[Network] Applied Kugou API network settings', {
