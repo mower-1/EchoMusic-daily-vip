@@ -9,6 +9,7 @@ import { computed, onMounted, onUnmounted, reactive, ref, toRaw, watch } from 'v
 import { captureUserSession } from '@/utils/userSession';
 import { useRouter } from 'vue-router';
 import { useUserStore } from '@/stores/user';
+import { useSettingStore } from '@/stores/setting';
 import { useLoginDeviceStore, type LoginDeviceSession } from '@/stores/loginDevices';
 import Button from '@/components/ui/Button.vue';
 import Tag from '@/components/ui/Tag.vue';
@@ -33,22 +34,28 @@ import UserIdentitySummary from '@/components/profile/UserIdentitySummary.vue';
 import { getAccountIdentity, getUserIdentity, type UserIdentityBadge } from '@/utils/userIdentity';
 
 import logger from '@/utils/logger';
+import { maybeAutoReceiveVip } from '@/utils/dailyVip';
 import { useToastStore } from '@/stores/toast';
 import {
   addUserFollow,
+  claimDayVip,
   deleteUserFollow,
   getUserFans,
   getUserFollow,
   getUserFriends,
   getUserFollowMessages,
   getUserVisitors,
+  getVipMonthRecord,
   sendUserFollowChat,
+  upgradeDayVip,
   type UpdateUserProfileParams,
 } from '@/api/user';
 import { normalizeCoverUrl } from '@/utils/cover';
 import {
+  iconCheck,
   iconChevronLeft,
   iconChevronRight,
+  iconGift,
   iconHeadphones,
   iconInfo,
   iconLogOut,
@@ -57,6 +64,7 @@ import {
   iconPencil,
   iconPlus,
   iconRefreshCw,
+  iconSparkles,
   iconDiamond,
   iconSmartphone,
   iconUser,
@@ -83,11 +91,13 @@ interface DetailState {
 
 const router = useRouter();
 const userStore = useUserStore();
+const settingStore = useSettingStore();
 const loginDeviceStore = useLoginDeviceStore();
 const toastStore = useToastStore();
 const userInfo = computed(() => userStore.info);
 
 const isLoading = ref(false);
+const claimingAction = ref<'tvip' | 'svip' | null>(null);
 const showContentBlacklist = ref(false);
 const showListeningPreferences = ref(false);
 const showAccountSwitcher = ref(false);
@@ -328,6 +338,7 @@ const resetProfileState = () => {
     delete socialListRequests[key];
   }
   isLoading.value = false;
+  claimingAction.value = null;
   isSavingProfile.value = false;
   isUploadingAvatar.value = false;
   gradeLoading.value = false;
@@ -370,6 +381,98 @@ const deluxeVipMembership = computed<VipLevelInfo | undefined>(() =>
       }
     : undefined,
 );
+
+// --- 每日权益（畅听会员领取 / 概念会员升级） ---
+/** 当前正在进行的领取动作，用于按钮态与防重复点击。 */
+const isClaimingVip = computed(() => claimingAction.value !== null);
+/** 领取入口仅在彩蛋解锁后出现（设置-关于连点「当前版本」5 次）。 */
+const dailyClaimVisible = computed(() => settingStore.vipClaimEnabled === true);
+const tvipClaimed = computed(() => userStore.isTvipClaimedToday || !!tvip.value);
+const svipClaimed = computed(() => userStore.isSvipClaimedToday || !!svip.value);
+
+const refreshDailyClaimStatus = async () => {
+  if (!userStore.isLoggedIn) return;
+  try {
+    const res = (await getVipMonthRecord()) as {
+      data?: { list?: Array<Record<string, unknown>> };
+    } | null;
+    const list = Array.isArray(res?.data?.list) ? res.data.list : [];
+    const day = await userStore.getServerToday();
+    // 记录接口可能滞后，只要有领取记录或本次已领成功，就保留「今日已领」状态
+    userStore.setClaimStatus(
+      list.some((item) => String(item?.day ?? '') === day) || userStore.isTvipClaimedToday,
+      svipClaimed.value,
+    );
+  } catch (e) {
+    logger.warn('Profile', 'Load daily VIP record failed:', e);
+  }
+};
+
+const refreshAfterVipClaim = async () => {
+  const isCurrent = captureProfileScope();
+  await userStore.fetchUserInfo();
+  await refreshDailyClaimStatus();
+  if (!isCurrent()) return;
+  try {
+    const { usePlayerStore } = await import('@/stores/player');
+    const playerStore = usePlayerStore();
+    if (playerStore.currentTrackId && !playerStore.isLoading) {
+      await playerStore.refreshCurrentTrack();
+    }
+  } catch (e) {
+    logger.warn('Profile', 'Refresh playback after VIP claim failed:', e);
+  }
+};
+
+const readApiMessage = (payload: unknown, fallback: string): string => {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const record = payload as Record<string, unknown>;
+  const message = record.error || record.message || record.msg;
+  return typeof message === 'string' && message.trim() ? message : fallback;
+};
+
+const handleClaimTvip = async () => {
+  if (!settingStore.vipClaimEnabled || tvipClaimed.value || isClaimingVip.value) return;
+  claimingAction.value = 'tvip';
+  try {
+    const day = await userStore.getServerToday();
+    const res = (await claimDayVip(day)) as { status?: number; error_code?: number } | null;
+    if (res?.status === 1) {
+      userStore.setClaimStatus(true, userStore.isSvipClaimedToday);
+      toastStore.success('畅听会员领取成功');
+      await refreshAfterVipClaim();
+    } else {
+      toastStore.warning(readApiMessage(res, '领取失败，可能今日已领取'));
+    }
+  } catch (e) {
+    logger.error('Profile', 'Claim TVIP error:', e);
+    toastStore.warning('领取失败，请检查网络后重试');
+  } finally {
+    claimingAction.value = null;
+  }
+};
+
+const handleUpgradeSvip = async () => {
+  if (!settingStore.vipClaimEnabled || svipClaimed.value || isClaimingVip.value) return;
+  if (!tvipClaimed.value) return;
+  claimingAction.value = 'svip';
+  try {
+    const res = (await upgradeDayVip()) as { status?: number; error_code?: number } | null;
+    // 297002：今日已升级过，同样视为已领取
+    if (res?.status === 1 || res?.error_code === 297002) {
+      userStore.setClaimStatus(userStore.isTvipClaimedToday, true);
+      toastStore.success('概念会员升级成功');
+      await refreshAfterVipClaim();
+    } else {
+      toastStore.warning(readApiMessage(res, '升级失败，请稍后重试'));
+    }
+  } catch (e) {
+    logger.error('Profile', 'Upgrade SVIP error:', e);
+    toastStore.warning('升级失败，请检查网络后重试');
+  } finally {
+    claimingAction.value = null;
+  }
+};
 
 const gender = computed(() => {
   const g = detail.value?.gender;
@@ -1382,6 +1485,11 @@ const loadData = async () => {
     void loginDeviceStore.fetchDevices();
     if (!isCurrent()) return;
     void loadSocialList('follow');
+    // 每日权益：先同步今日领取记录，再按需自动领取一次（均为后台任务，不阻塞页面）
+    if (settingStore.vipClaimEnabled) {
+      void refreshDailyClaimStatus();
+      void maybeAutoReceiveVip('profile');
+    }
   } catch (e) {
     if (isCurrent()) logger.error('Profile', 'Load Data Error:', e);
   } finally {
@@ -1708,6 +1816,50 @@ onUnmounted(() => {
                     <p v-else class="profile-expiry">未开通</p>
                   </div>
                 </article>
+              </section>
+              <section
+                v-if="dailyClaimVisible"
+                class="profile-daily-claim"
+                aria-label="每日权益领取"
+              >
+                <div class="profile-daily-claim-copy">
+                  <h4>每日权益</h4>
+                  <p>每天可领取一次畅听会员，领取后可升级为概念会员</p>
+                </div>
+                <div class="profile-daily-claim-actions">
+                  <button
+                    type="button"
+                    class="profile-claim-button is-music"
+                    :class="{ 'is-done': tvipClaimed }"
+                    :disabled="tvipClaimed || isClaimingVip"
+                    @click="handleClaimTvip"
+                  >
+                    <Icon :icon="tvipClaimed ? iconCheck : iconGift" width="16" height="16" />
+                    <span>{{
+                      tvipClaimed
+                        ? '今日已领畅听会员'
+                        : claimingAction === 'tvip'
+                          ? '领取中...'
+                          : '领取畅听会员'
+                    }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="profile-claim-button is-concept"
+                    :class="{ 'is-done': svipClaimed }"
+                    :disabled="svipClaimed || !tvipClaimed || isClaimingVip"
+                    @click="handleUpgradeSvip"
+                  >
+                    <Icon :icon="svipClaimed ? iconCheck : iconSparkles" width="16" height="16" />
+                    <span>{{
+                      svipClaimed
+                        ? '今日已升级概念会员'
+                        : claimingAction === 'svip'
+                          ? '升级中...'
+                          : '升级概念会员'
+                    }}</span>
+                  </button>
+                </div>
               </section>
             </section>
           </div>
@@ -2506,7 +2658,76 @@ onUnmounted(() => {
 .profile-expiry-details dd {
   font-weight: 500;
 }
+.profile-daily-claim {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-subtle);
+}
+.profile-daily-claim-copy {
+  min-width: 0;
+}
+.profile-daily-claim-copy h4 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.profile-daily-claim-copy p {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+.profile-daily-claim-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.profile-claim-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-muted-bg);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    background-color var(--motion-duration-fast) var(--motion-ease-standard),
+    color var(--motion-duration-fast) var(--motion-ease-standard),
+    border-color var(--motion-duration-fast) var(--motion-ease-standard);
+}
+.profile-claim-button.is-music {
+  color: color-mix(in srgb, var(--state-success) 68%, var(--color-text-main));
+}
+.profile-claim-button.is-concept {
+  color: color-mix(in srgb, #8b5cf6 68%, var(--color-text-main));
+}
+.profile-claim-button:hover:not(:disabled) {
+  background: var(--control-hover-bg);
+}
+.profile-claim-button.is-done {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--color-text-secondary);
+  cursor: default;
+}
+.profile-claim-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.profile-claim-button.is-done:disabled {
+  opacity: 1;
+}
 @container profile-details (max-width: 680px) {
+  .profile-daily-claim {
+    flex-direction: column;
+    align-items: flex-start;
+  }
   .profile-membership {
     flex-direction: column;
     align-items: flex-start;

@@ -27,6 +27,7 @@ import {
   kugouVerificationState,
 } from '@/utils/kugouVerification';
 import logger from '@/utils/logger';
+import { maybeAutoReceiveVip } from '@/utils/dailyVip';
 import { closeTransientView } from '@/utils/navigation';
 
 // 引入封装后的 UI 组件
@@ -122,6 +123,7 @@ const completeLogin = (data: Record<string, unknown>) => {
   isLoginDone = true;
   invalidateQrSession();
   completeKugouLoginVerification();
+  void maybeAutoReceiveVip('login');
 
   void closeTransientView(router, { query: router.currentRoute.value.query });
 };

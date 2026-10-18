@@ -217,6 +217,10 @@ export const useSettingStore = defineStore('setting', {
     playResumeTimeout: 5,
     silentUpdate: true,
     autoCheckUpdate: true,
+    /** 启动后自动领取每日畅听会员并升级概念会员。 */
+    autoReceiveVip: false,
+    /** 每日会员领取功能总开关（隐藏彩蛋，设置-关于连点「当前版本」5 次解锁）。 */
+    vipClaimEnabled: false,
     importBackgroundConfirmDismissed: false,
     cloudUploadBackgroundConfirmDismissed: false,
     checkPrerelease: false,
@@ -615,6 +619,11 @@ export const useSettingStore = defineStore('setting', {
     setOutputDeviceStatus(status: OutputDeviceStatus, message = '') {
       this.outputDeviceStatus = status;
       this.outputDeviceStatusMessage = message;
+    },
+    /** 解锁/关闭每日会员领取功能；关闭时同时停用自动领取。 */
+    setVipClaimEnabled(enabled: boolean) {
+      this.vipClaimEnabled = enabled === true;
+      if (!this.vipClaimEnabled) this.autoReceiveVip = false;
     },
     addImpulseResponseFile(file: SpatialAudioEffectEntry, options?: { select?: boolean }) {
       this.addImpulseResponseFiles([file], options);

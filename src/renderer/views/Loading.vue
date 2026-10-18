@@ -6,6 +6,7 @@ import { iconTriangleAlert } from '@/icons';
 import { useDeviceStore } from '@/stores/device';
 import { useToastStore } from '@/stores/toast';
 import { ensureDevice } from '@/utils/device';
+import { maybeAutoReceiveVip } from '@/utils/dailyVip';
 import logger from '@/utils/logger';
 import { markStartup } from '@/utils/startupTiming';
 import Button from '@/components/ui/Button.vue';
@@ -91,6 +92,9 @@ const completeStartup = async () => {
     hasCompletedStartup.value = false;
     return;
   }
+
+  statusMessage.value = '正在检查每日权益...';
+  await maybeAutoReceiveVip('startup');
 
   statusMessage.value = '引擎就绪，正在开启音乐世界...';
   window.setTimeout(() => {

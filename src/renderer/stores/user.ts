@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia';
 import {
+  claimDayVip,
+  getServerNow,
   getUserDetail,
   getUserInfo,
   getUserFollow,
@@ -7,6 +9,7 @@ import {
   getUserVipDetail,
   updateUserAvatar,
   updateUserProfile,
+  upgradeDayVip,
   type UpdateUserProfileParams,
 } from '@/api/user';
 import { useListenReportStore } from '@/stores/listenReport';
@@ -123,6 +126,12 @@ export const useUserStore = defineStore('user', {
     isLoggedIn: false,
     hasFetchedUserInfo: false,
     isFetchingUserInfo: false,
+    /** 今日是否已领取畅听会员（每日权益）。 */
+    isTvipClaimedToday: false,
+    /** 今日是否已升级概念会员（每日权益）。 */
+    isSvipClaimedToday: false,
+    /** 领取请求进行中，避免重复触发。 */
+    isAutoClaimingVip: false,
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
     accountRevision: 0,
@@ -348,6 +357,97 @@ export const useUserStore = defineStore('user', {
       }
     },
 
+    /**
+     * 领取当日畅听会员，成功后升级为概念会员并刷新账号权益。
+     * 任一步失败只记录日志，不抛出，避免影响启动与页面加载。
+     */
+    async autoReceiveVipIfNeeded(options: { upgrade?: boolean } = {}) {
+      if (!this.isLoggedIn || this.isAutoClaimingVip) return { claimed: false, upgraded: false };
+      const revision = this.accountRevision;
+      this.isAutoClaimingVip = true;
+      let claimed = false;
+      let upgraded = false;
+      try {
+        // 使用服务器时间推导日期，避免本地时区/时间不准导致领取错日期
+        const day = await this.getServerToday();
+
+        try {
+          const payload = asApiPayload(await claimDayVip(day));
+          claimed = payload?.status === 1;
+          if (!claimed) logger.warn('UserStore', 'VIP claim: claimDayVip rejected', payload);
+        } catch (e) {
+          logger.warn('UserStore', 'VIP claim: claimDayVip failed', e);
+        }
+
+        if (claimed && options.upgrade !== false) {
+          try {
+            const payload = asApiPayload(await upgradeDayVip());
+            // 297002 表示今日已升级过，视为成功
+            upgraded = payload?.status === 1 || payload?.error_code === 297002;
+            if (!upgraded) logger.warn('UserStore', 'VIP claim: upgradeDayVip rejected', payload);
+          } catch (e) {
+            logger.warn('UserStore', 'VIP claim: upgradeDayVip failed', e);
+          }
+        }
+
+        if (revision !== this.accountRevision) return { claimed: false, upgraded: false };
+        if (claimed || upgraded) {
+          this.setClaimStatus(
+            claimed || this.isTvipClaimedToday,
+            upgraded || this.isSvipClaimedToday,
+          );
+          try {
+            const success = await this.fetchUserInfo();
+            if (success) this.hasFetchedUserInfo = true;
+          } catch (e) {
+            logger.warn('UserStore', 'VIP claim: refresh user info failed', e);
+          }
+        }
+        return { claimed, upgraded };
+      } catch (error) {
+        logger.warn('UserStore', 'Auto receive VIP unexpected error:', error);
+        return { claimed, upgraded };
+      } finally {
+        this.isAutoClaimingVip = false;
+      }
+    },
+
+    setClaimStatus(tvip: boolean, svip: boolean) {
+      this.isTvipClaimedToday = tvip === true;
+      this.isSvipClaimedToday = svip === true;
+    },
+
+    /** 用服务端时间推导「今天」（北京时间），失败时回退本地时间。 */
+    async getServerToday(): Promise<string> {
+      const toBeijingDay = (ms: number) => {
+        const date = new Date(ms + 8 * 60 * 60 * 1000);
+        return date.toISOString().split('T')[0];
+      };
+      try {
+        const res = await getServerNow();
+        if (res && typeof res === 'object') {
+          const record = res as Record<string, unknown>;
+          const source = (isRecord(record.data) ? record.data : record) as Record<string, unknown>;
+          for (const candidate of [
+            source.now,
+            source.time,
+            source.timestamp,
+            source.server_time,
+            source.serverTime,
+          ]) {
+            const value = Number(candidate);
+            if (Number.isFinite(value) && value > 0) {
+              // 服务器可能返回秒级或毫秒级时间戳
+              return toBeijingDay(value > 1e12 ? value : value * 1000);
+            }
+          }
+        }
+      } catch (e) {
+        logger.warn('UserStore', 'Failed to get server time, using local time', e);
+      }
+      return toBeijingDay(Date.now());
+    },
+
     async updateProfile(params: UpdateUserProfileParams) {
       if (!this.isLoggedIn || !this.info) throw new Error('请先登录后再修改个人资料');
       const revision = this.accountRevision;
@@ -449,6 +549,9 @@ export const useUserStore = defineStore('user', {
       this.isFetchingUserInfo = false;
       this.followedArtistIds = new Set();
       this.hasFetchedFollowedArtists = false;
+      this.isTvipClaimedToday = false;
+      this.isSvipClaimedToday = false;
+      this.isAutoClaimingVip = false;
       // 清空听歌时长上报状态，避免跨账号串号
       useListenReportStore().reset();
     },
@@ -500,6 +603,9 @@ export const useUserStore = defineStore('user', {
     omit: [
       'hasFetchedUserInfo',
       'isFetchingUserInfo',
+      'isTvipClaimedToday',
+      'isSvipClaimedToday',
+      'isAutoClaimingVip',
       'followedArtistIds',
       'hasFetchedFollowedArtists',
       'accountRevision',

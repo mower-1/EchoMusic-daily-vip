@@ -34,6 +34,8 @@ const logLevelOptions: { label: string; value: AppLogLevel }[] = [
 ];
 
 const diagnosticActive = computed(() => settingStore.logDiagnosticUntil > Date.now());
+/** 每日会员领取功能仅在彩蛋解锁后展示（设置-关于连点「当前版本」5 次）。 */
+const vipClaimFeatureVisible = computed(() => settingStore.vipClaimEnabled === true);
 
 const diagnosticLabel = computed(() => {
   if (!diagnosticActive.value) return '未启用';
@@ -162,6 +164,17 @@ const confirmResetDeviceIdentity = async () => {
       />
       <FontIcon v-else :size="20" class="text-primary-text" />
     </template>
+
+    <div class="settings-item" v-if="vipClaimFeatureVisible">
+      <div class="space-y-1">
+        <h3 class="font-semibold">自动领取每日会员</h3>
+        <p class="text-sm text-text-secondary">
+          启动、登录或进入个人中心时自动领取畅听会员，并升级为概念会员
+        </p>
+      </div>
+      <Switch v-model="settingStore.autoReceiveVip" />
+    </div>
+    <div class="settings-divider" v-if="vipClaimFeatureVisible"></div>
 
     <div class="settings-item">
       <div class="space-y-1">
