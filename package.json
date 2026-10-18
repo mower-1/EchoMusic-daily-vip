@@ -90,8 +90,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "hoowhoami",
-        "repo": "EchoMusic"
+        "owner": "mower-1",
+        "repo": "EchoMusic-daily-vip"
       }
     ],
     "npmRebuild": false,
