@@ -337,6 +337,14 @@ pnpm build
 
 `pnpm build` 执行类型检查、Vite 构建和 electron-builder 打包；`npmRebuild` 已关闭，打包过程只复制现有 Native 产物，不会替你补编译。Windows / macOS 需包含全部 8 个模块，Linux 需包含除 `echo-platform-adaptor` 外的 7 个模块。
 
+**Windows 无代码签名环境提示**：electron-builder 默认会解压 `winCodeSign` 工具包用于 rcedit（设置 exe 图标/版本信息），解压时会创建 macOS dylib 符号链接，在**未开启开发者模式且非管理员**的 Windows 账户下会失败（`客户端没有所需的特权`）。如遇此问题，可跳过签名与资源编辑：
+
+```bash
+pnpm exec electron-builder --win --x64 --publish never -c.win.signAndEditExecutable=false
+```
+
+或在 Windows 设置中开启「开发者模式」（设置 → 隐私和安全性 → 开发者选项），即可正常执行 `pnpm build`。
+
 ## 🧰 Native 模块 CI 产物
 
 除了推送 `v*` Tag 时运行的完整桌面发布流程，Actions 还提供独立的 **Build Native Addons** 手动 workflow。进入 GitHub Actions 后点击 **Run workflow**，可以分别勾选 macOS arm64/x64、Linux arm64/x64、Windows arm64/x64；默认全部勾选。选中的目标会在独立矩阵任务中并行编译，未选中的目标不会启动。
