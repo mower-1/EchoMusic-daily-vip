@@ -83,6 +83,8 @@ AGENTS.md
 dist-ssr/
 release/
 release-final/
+release-b18/
+.nm-*/
 
 # Editor / tooling leftovers
 .workbuddy/

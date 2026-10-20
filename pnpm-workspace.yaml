@@ -11,3 +11,11 @@ ignoredBuiltDependencies:
   - electron-winstaller
   - esbuild
   - vue-demi
+
+# 与打包脚本保持一致：扁平布局，避免 pnpm 判定布局不一致后自动重装
+nodeLinker: hoisted
+packageImportMethod: hardlink
+
+# pnpm 10+ 执行命令前会校验依赖，不一致时自动重装
+# （重装会先清空 node_modules 顶层，导致 electron-builder 打包中途依赖消失）
+verifyDepsBeforeRun: false
