@@ -1,12 +1,14 @@
 import { defineStore } from 'pinia';
 import {
   claimDayVip,
+  claimVipAd,
   getServerNow,
   getUserDetail,
   getUserInfo,
   getUserFollow,
   getUserGradeInfo,
   getUserVipDetail,
+  listenSongVip,
   updateUserAvatar,
   updateUserProfile,
   upgradeDayVip,
@@ -132,6 +134,14 @@ export const useUserStore = defineStore('user', {
     isSvipClaimedToday: false,
     /** 领取请求进行中，避免重复触发。 */
     isAutoClaimingVip: false,
+    /** 今日听歌领取状态：'' 未尝试、'ok' 成功、'claimed' 今日已领、'failed' 失败。 */
+    listenClaimStatus: '' as '' | 'ok' | 'claimed' | 'failed',
+    /** 今日已领取的广告位 VIP 次数。 */
+    vipAdClaimCount: 0,
+    /** 每日签到流程进行中（广告位多轮领取耗时较长）。 */
+    isCheckInRunning: false,
+    /** 签到进度文案，供界面展示。 */
+    checkInStage: '',
     followedArtistIds: new Set<string>(),
     hasFetchedFollowedArtists: false,
     accountRevision: 0,
@@ -417,6 +427,105 @@ export const useUserStore = defineStore('user', {
       this.isSvipClaimedToday = svip === true;
     },
 
+    /**
+     * 执行每日签到：听歌领取 + 广告位次数领取。
+     *
+     * 规则对齐 KGM-AUTO-CHECKIN：
+     * - 听歌领取返回 status=1 为成功，error_code=130012 表示今日已领，同样视为成功；
+     * - 广告位领取最多 8 轮，每轮成功后间隔 30 秒；error_code=30002 表示当日次数用光，
+     *   属正常终态而非失败。
+     *
+     * 失败只记日志不抛出，避免打断启动流程；切换账号后立即中止。
+     */
+    async runDailyCheckIn(options: { rounds?: number; intervalMs?: number } = {}) {
+      if (!this.isLoggedIn || this.isCheckInRunning) {
+        return {
+          listen: this.listenClaimStatus,
+          ads: this.vipAdClaimCount,
+          exhausted: false,
+          skipped: true,
+        };
+      }
+
+      const revision = this.accountRevision;
+      const rounds = Math.max(1, Math.min(20, options.rounds ?? 8));
+      const intervalMs = Math.max(0, options.intervalMs ?? 30_000);
+      const sleep = (ms: number) =>
+        ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
+
+      this.isCheckInRunning = true;
+      this.vipAdClaimCount = 0;
+      let listen: 'ok' | 'claimed' | 'failed' = 'failed';
+      let exhausted = false;
+
+      try {
+        // 1) 听歌领取
+        this.checkInStage = '正在听歌领取...';
+        try {
+          const payload = asApiPayload(await listenSongVip());
+          if (payload?.status === 1) {
+            listen = 'ok';
+            logger.info('UserStore', 'Check-in: listen claim succeeded');
+          } else if (payload?.error_code === 130012) {
+            listen = 'claimed';
+            logger.info('UserStore', 'Check-in: listen claim already done today');
+          } else {
+            logger.warn('UserStore', 'Check-in: listen claim rejected', payload);
+          }
+        } catch (e) {
+          logger.warn('UserStore', 'Check-in: listen claim failed', e);
+        }
+        if (revision !== this.accountRevision) {
+          return { listen, ads: 0, exhausted, skipped: true };
+        }
+        this.listenClaimStatus = listen;
+
+        // 2) 广告位次数领取
+        for (let round = 1; round <= rounds; round += 1) {
+          if (revision !== this.accountRevision) break;
+          this.checkInStage = `正在领取第 ${round} 次会员...`;
+          let shouldContinue = true;
+          try {
+            const payload = asApiPayload(await claimVipAd());
+            if (payload?.status === 1) {
+              this.vipAdClaimCount += 1;
+              logger.info('UserStore', `Check-in: ad claim ${round} succeeded`);
+            } else if (payload?.error_code === 30002) {
+              exhausted = true;
+              shouldContinue = false;
+              logger.info('UserStore', 'Check-in: daily ad quota used up');
+            } else {
+              shouldContinue = false;
+              logger.warn('UserStore', `Check-in: ad claim ${round} rejected`, payload);
+            }
+          } catch (e) {
+            shouldContinue = false;
+            logger.warn('UserStore', `Check-in: ad claim ${round} failed`, e);
+          }
+          if (!shouldContinue) break;
+          if (round < rounds) await sleep(intervalMs);
+        }
+
+        if (revision !== this.accountRevision) {
+          return { listen, ads: this.vipAdClaimCount, exhausted, skipped: true };
+        }
+
+        // 3) 有任意收益时刷新账号权益，让到期时间即时更新
+        if (this.vipAdClaimCount > 0 || listen !== 'failed') {
+          try {
+            await this.fetchUserInfo();
+          } catch (e) {
+            logger.warn('UserStore', 'Check-in: refresh user info failed', e);
+          }
+        }
+
+        return { listen, ads: this.vipAdClaimCount, exhausted, skipped: false };
+      } finally {
+        this.isCheckInRunning = false;
+        this.checkInStage = '';
+      }
+    },
+
     /** 用服务端时间推导「今天」（北京时间），失败时回退本地时间。 */
     async getServerToday(): Promise<string> {
       const toBeijingDay = (ms: number) => {
@@ -552,6 +661,10 @@ export const useUserStore = defineStore('user', {
       this.isTvipClaimedToday = false;
       this.isSvipClaimedToday = false;
       this.isAutoClaimingVip = false;
+      this.listenClaimStatus = '';
+      this.vipAdClaimCount = 0;
+      this.isCheckInRunning = false;
+      this.checkInStage = '';
       // 清空听歌时长上报状态，避免跨账号串号
       useListenReportStore().reset();
     },
@@ -606,6 +719,10 @@ export const useUserStore = defineStore('user', {
       'isTvipClaimedToday',
       'isSvipClaimedToday',
       'isAutoClaimingVip',
+      'listenClaimStatus',
+      'vipAdClaimCount',
+      'isCheckInRunning',
+      'checkInStage',
       'followedArtistIds',
       'hasFetchedFollowedArtists',
       'accountRevision',

@@ -383,6 +383,29 @@ export function getVipMonthRecord() {
 }
 
 /**
+ * 听歌领取 VIP（每日签到）。
+ * 服务端会上报一条播放记录，未指定歌曲时使用内置默认值。
+ */
+export function listenSongVip(mixsongid?: number) {
+  return request.get('/youth/listen/song', {
+    params: {
+      ...(typeof mixsongid === 'number' && mixsongid > 0 ? { mixsongid } : {}),
+      // 服务端对 200 响应有 2 分钟缓存，加时间戳保证每次都是新请求
+      timestrap: Date.now(),
+    },
+  });
+}
+
+/**
+ * 播放广告领取一次 VIP 次数（每日最多 8 次）。
+ */
+export function claimVipAd() {
+  return request.get('/youth/vip', {
+    params: { timestrap: Date.now() },
+  });
+}
+
+/**
  * 获取播放历史
  */
 export function getUserHistory(bp?: string) {

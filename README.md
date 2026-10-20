@@ -269,27 +269,39 @@ EchoMusic 支持在线插件源和本地插件，可以扩展页面、音源、�
 
 本分支基于上游 `v2.3.2-beta.17` 重新移植该功能。上游 `src/renderer/api/user.ts` 中的 `claimDayVip` / `upgradeDayVip` / `getVipMonthRecord` / `getServerNow` 四个接口仍然存在且可用，因此本次移植**没有改动任何网络请求接口**，只恢复了调用层的状态管理、界面与触发时机，并按当前版本的架构做了适配。
 
+每日签到部分参考了 [KGM-AUTO-CHECKIN](https://github.com/qfmc7040/KGM-AUTO-CHECKIN) 的领取流程，改用本仓库 `server/` 中已有的 `youth_listen_song` / `youth_vip` 两个模块，无需额外部署服务。
+
 ### 改动清单
 
 | 文件 | 类型 | 改动内容 |
 | --- | --- | --- |
-| `src/renderer/utils/dailyVip.ts` | 新增 | 统一的功能开关判断，以及「账号 + 服务端日期」维度的每日去重逻辑，保证启动 / 登录 / 进入个人页三条触发路径每天各自最多执行一次 |
+| `src/renderer/utils/dailyVip.ts` | 新增 | 统一的功能开关判断，以及「账号 + 服务端日期」维度的每日去重逻辑，保证启动 / 登录 / 进入个人页三条触发路径每天各自最多执行一次；新增 `maybeAutoCheckIn()` 负责后台触发签到 |
 | `src/renderer/stores/setting.ts` | 修改 | 恢复持久化开关 `vipClaimEnabled`（功能总开关，隐藏）与 `autoReceiveVip`（启动自动领取），新增 `setVipClaimEnabled()` |
-| `src/renderer/stores/user.ts` | 修改 | 新增 `autoReceiveVipIfNeeded()`、`setClaimStatus()`、`getServerToday()` 与 `isTvipClaimedToday` / `isSvipClaimedToday` / `isAutoClaimingVip` 状态；登出时重置；这些状态不进入持久化 |
+| `src/renderer/stores/user.ts` | 修改 | 新增 `autoReceiveVipIfNeeded()`、`runDailyCheckIn()`、`setClaimStatus()`、`getServerToday()`，以及 `isTvipClaimedToday` / `isSvipClaimedToday` / `isAutoClaimingVip` / `listenClaimStatus` / `vipAdClaimCount` / `isCheckInRunning` / `checkInStage` 状态；登出时重置；这些状态不进入持久化 |
+| `src/renderer/api/user.ts` | 修改 | 新增 `listenSongVip()`（`/youth/listen/song` 听歌领取）与 `claimVipAd()`（`/youth/vip` 广告次数领取），请求带 `timestrap` 以绕开本地服务的 2 分钟响应缓存 |
 | `src/renderer/views/Loading.vue` | 修改 | 启动流程中在页面跳转前执行一次自动领取 |
 | `src/renderer/views/Login.vue` | 修改 | 登录成功后触发一次自动领取 |
-| `src/renderer/views/Profile.vue` | 修改 | 个人页新增「每日权益」卡片：手动领取畅听会员、升级概念会员，并展示今日领取状态 |
+| `src/renderer/views/Profile.vue` | 修改 | 个人页新增「每日权益」卡片：手动领取畅听会员、升级概念会员、一键签到，并展示今日领取状态与签到进度 |
 | `src/renderer/views/settings/components/AboutSettingsSection.vue` | 修改 | 恢复彩蛋：设置 → 关于，连点「当前版本」5 次解锁功能（带撒花反馈） |
 | `src/renderer/views/settings/components/ExperimentalSettingsSection.vue` | 修改 | 功能解锁后，在「实验功能」中显示「自动领取每日会员」开关 |
 | `src/main/networkSettings.ts` | 修改 | 修复本地服务的 axios ESM/CJS 互操作：`require('axios')` 取 `default`，避免 `Cannot set properties of undefined (setting 'timeout')` |
 
+### 每日签到说明
+
+签到会依次执行两步，全部走本地 `server/` 里已有的酷狗官方接口：
+
+1. **听歌领取**：调用 `/youth/listen/song` 上报一条播放记录换取每日权益。返回 `error_code = 130012` 表示今日已领，视为成功。
+2. **广告次数领取**：调用 `/youth/vip` 模拟观看广告，每次消耗一次机会，最多 8 轮，每轮成功后等待 30 秒。返回 `error_code = 30002` 表示当日次数已用光，属正常结束。
+
+完整流程约 3~4 分钟，因此在后台执行，不阻塞启动；进度会实时显示在「每日权益」卡片的签到按钮上。中途关闭应用不影响已领取的权益，剩余次数次日可继续。
+
 ### 使用方式
 
 1. 打开 **设置 → 关于**，连续点击「当前版本」**5 次**，解锁每日会员领取功能（出现撒花动画）。
-2. 打开 **设置 → 实验功能**，打开「**自动领取每日会员**」开关，之后每次启动 / 登录都会自动领取并尝试升级。
-3. 也可以随时在 **个人主页** 的「每日权益」卡片中手动领取畅听会员、升级概念会员，卡片会显示今日领取状态。
+2. 打开 **设置 → 实验功能**，打开「**自动领取每日会员**」开关，之后每次启动 / 登录都会自动领取并尝试升级，随后在后台自动签到。
+3. 也可以随时在 **个人主页** 的「每日权益」卡片中手动领取畅听会员、升级概念会员，或点击「每日签到」立即执行完整的听歌 + 广告次数领取。
 
-> 再次连点 5 次可关闭总开关，关闭时会同时停用自动领取。以上开关均为本地设置，不会上传。
+> 再次连点 5 次可关闭总开关，关闭时会同时停用自动领取与自动签到。以上开关均为本地设置，不会上传。
 
 ### 构建与运行
 

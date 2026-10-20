@@ -390,6 +390,25 @@ const dailyClaimVisible = computed(() => settingStore.vipClaimEnabled === true);
 const tvipClaimed = computed(() => userStore.isTvipClaimedToday || !!tvip.value);
 const svipClaimed = computed(() => userStore.isSvipClaimedToday || !!svip.value);
 
+/** 今日签到是否已有结果：听歌成功/已领，或已领到广告位次数。 */
+const checkInDone = computed(
+  () =>
+    userStore.listenClaimStatus === 'ok' ||
+    userStore.listenClaimStatus === 'claimed' ||
+    userStore.vipAdClaimCount > 0,
+);
+
+/** 签到按钮文案：进行中显示具体阶段，完成后显示今日战果。 */
+const checkInLabel = computed(() => {
+  if (userStore.isCheckInRunning) return userStore.checkInStage || '签到中...';
+  if (checkInDone.value) {
+    return userStore.vipAdClaimCount > 0
+      ? `今日已签到 · 领到 ${userStore.vipAdClaimCount} 次`
+      : '今日已签到';
+  }
+  return '每日签到';
+});
+
 const refreshDailyClaimStatus = async () => {
   if (!userStore.isLoggedIn) return;
   try {
@@ -471,6 +490,28 @@ const handleUpgradeSvip = async () => {
     toastStore.warning('升级失败，请检查网络后重试');
   } finally {
     claimingAction.value = null;
+  }
+};
+
+/**
+ * 手动触发每日签到（听歌领取 + 广告位次数领取）。
+ * 广告位最多 8 轮、每轮间隔 30 秒，期间按钮显示实时阶段。
+ */
+const handleDailyCheckIn = async () => {
+  if (!settingStore.vipClaimEnabled || userStore.isCheckInRunning) return;
+  try {
+    const result = await userStore.runDailyCheckIn();
+    if (result.skipped) return;
+    if (result.ads > 0) {
+      toastStore.success(`签到成功，本次领取 ${result.ads} 次会员`);
+    } else if (result.listen === 'ok' || result.listen === 'claimed') {
+      toastStore.success('听歌签到成功，今日次数可能已用光');
+    } else {
+      toastStore.warning('签到未成功，请稍后重试');
+    }
+  } catch (e) {
+    logger.error('Profile', 'Daily check-in error:', e);
+    toastStore.warning('签到失败，请检查网络后重试');
   }
 };
 
@@ -1824,9 +1865,21 @@ onUnmounted(() => {
               >
                 <div class="profile-daily-claim-copy">
                   <h4>每日权益</h4>
-                  <p>每天可领取一次畅听会员，领取后可升级为概念会员</p>
+                  <p>
+                    每天可领取一次畅听会员，领取后可升级为概念会员；签到会额外完成听歌领取与广告次数领取
+                  </p>
                 </div>
                 <div class="profile-daily-claim-actions">
+                  <button
+                    type="button"
+                    class="profile-claim-button is-checkin"
+                    :class="{ 'is-done': checkInDone }"
+                    :disabled="checkInDone || userStore.isCheckInRunning"
+                    @click="handleDailyCheckIn"
+                  >
+                    <Icon :icon="checkInDone ? iconCheck : iconSparkles" width="16" height="16" />
+                    <span>{{ checkInLabel }}</span>
+                  </button>
                   <button
                     type="button"
                     class="profile-claim-button is-music"
@@ -2706,6 +2759,9 @@ onUnmounted(() => {
 }
 .profile-claim-button.is-concept {
   color: color-mix(in srgb, #8b5cf6 68%, var(--color-text-main));
+}
+.profile-claim-button.is-checkin {
+  color: color-mix(in srgb, #f59e0b 68%, var(--color-text-main));
 }
 .profile-claim-button:hover:not(:disabled) {
   background: var(--control-hover-bg);
