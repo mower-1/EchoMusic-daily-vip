@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, shallowRef, watch, type Ref } from 'vue';
+import { computed, onMounted, onUnmounted, shallowRef, watch, type Ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useSettingStore } from '@/stores/setting';
 import { useOutputStore } from '@/stores/output';
@@ -37,6 +37,15 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
   useAppUserSession(lifetime);
   let syncGlobalShortcutsFn: SyncGlobalShortcuts | null = null;
 
+  const trayTrackTitle = computed(() => {
+    const track = player.value?.currentTrackSnapshot;
+    return track ? String(track.name || track.title || '未知歌曲') : '';
+  });
+  const trayTrackArtist = computed(() => {
+    const track = player.value?.currentTrackSnapshot;
+    return String(track?.artist || track?.artists?.map((item) => item.name).join(' / ') || '');
+  });
+
   const syncTrayPlayback = () => {
     const activePlayer = player.value;
     if (!activePlayer) return;
@@ -44,6 +53,8 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
       isPlaying: activePlayer.isPlaying,
       playMode: activePlayer.playMode,
       volume: activePlayer.volume,
+      trackTitle: trayTrackTitle.value,
+      trackArtist: trayTrackArtist.value,
     });
   };
 
@@ -192,6 +203,9 @@ export function useAppRuntime(isMiniPlayerRoute: Readonly<Ref<boolean>>) {
       if (!isMiniPlayerRoute.value) syncTrayPlayback();
     },
   );
+  watch([() => player.value?.currentTrackId, trayTrackTitle, trayTrackArtist], () => {
+    if (!isMiniPlayerRoute.value) syncTrayPlayback();
+  });
   watch(
     () => [
       settings.globalShortcutsEnabled,
