@@ -401,14 +401,17 @@ const isPairedFollowUp = (
 const hasPairedTimestampLayout = (sourceLines: readonly string[]): boolean => {
   let lineCount = 0;
   let pairs = 0;
-  let unpaired = 0;
   // 待配对的上一行。译文必须与原词**紧邻**——中间隔了空行就不能配，否则下一句
   // 原词会被当成译文吞掉，整行歌词凭空消失。
   let pending: { time: number; text: string } | null = null;
 
   for (const sourceLine of sourceLines) {
     const match = sourceLine.match(LRC_LINE_STAMP);
-    if (!match) continue;
+    if (!match) {
+      // 无时间戳的空行、元信息和 KRC 行同样打断相邻性。
+      pending = null;
+      continue;
+    }
     const time = Math.round(
       (Number.parseInt(match[1] ?? '0', 10) * 60 + Number.parseFloat(match[2] ?? '0')) * 1000,
     );
@@ -426,12 +429,12 @@ const hasPairedTimestampLayout = (sourceLines: readonly string[]): boolean => {
       pending = null;
       continue;
     }
-    if (pending) unpaired += 1;
     pending = current;
   }
-  if (pending) unpaired += 1;
 
   const entries = lineCount;
+  // 清空待配对状态不能抹掉已经计入的独立行；每个成功配对恰好消费两行。
+  const unpaired = entries - pairs * 2;
 
   const allowedUnpaired = Math.max(2, Math.round(entries * 0.3));
   const accepted = pairs >= 2 && unpaired <= allowedUnpaired;
@@ -688,6 +691,13 @@ const parseLyricDetailPayload = (
       const body = sourceLine.slice(lrcMatch[0].length);
       const compacted = lyricBodyText(body);
 
+      // 只有时间戳、没有正文（包括只剩行内时间戳）的行与空行等价。检测循环
+      // 已按空行处理，解析不能把它当正文建行，否则下一句原词会被当成译文吞掉。
+      if (!compacted) {
+        lastLrcEntry = null;
+        continue;
+      }
+
       // 双行同时间戳：与上一条 LRC 构成「原词 + 译文」时，认作上一条的译文。
       if (
         usePairedTimestamps &&
@@ -734,11 +744,9 @@ const parseLyricDetailPayload = (
         };
         parsedLines.push(entry);
         lastLrcEntry = { time: startTime, line: entry };
-      } else {
-        // 空行打断相邻性，与 hasPairedTimestampLayout 的处理保持一致；否则残留的
-        // 待配对行会把下一句原词吞成译文。
-        lastLrcEntry = null;
       }
+    } else {
+      lastLrcEntry = null;
     }
   }
 
