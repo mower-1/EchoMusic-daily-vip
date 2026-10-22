@@ -86,7 +86,7 @@
   },
   "build": {
     "appId": "com.hoowhoami.echomusic",
-    "productName": "EchoMusic",
+    "productName": "酷狗概念版",
     "publish": [
       {
         "provider": "github",

@@ -1,4 +1,5 @@
 import { app, protocol } from 'electron';
+import { join } from 'node:path';
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'echo-player-cover',
@@ -16,6 +17,10 @@ protocol.registerSchemesAsPrivileged([
   },
 ]);
 import { getDisableGpuAccelerationSetting, getHighDpiSettings } from './storage/settings';
+
+// 固定用户数据目录：产品名改为「酷狗概念版」后，Electron 默认会改用新目录，
+// 导致既有登录态、设置、插件与缓存全部失效。这里锁定为原来的 echo-music。
+app.setPath('userData', join(app.getPath('appData'), 'echo-music'));
 
 // Windows 音频/媒体会话初始化前先固定应用身份，避免系统把后续会话识别成临时客户端。
 if (process.platform === 'win32') {
