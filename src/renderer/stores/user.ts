@@ -383,8 +383,13 @@ export const useUserStore = defineStore('user', {
 
         try {
           const payload = asApiPayload(await claimDayVip(day));
-          claimed = payload?.status === 1;
-          if (!claimed) logger.warn('UserStore', 'VIP claim: claimDayVip rejected', payload);
+          // 131001：今日已领取，属正常终态，后续仍走升级检查
+          claimed = payload?.status === 1 || Number(payload?.error_code ?? 0) === 131001;
+          if (!claimed) {
+            logger.warn('UserStore', 'VIP claim: claimDayVip rejected', payload);
+          } else if (payload?.status !== 1) {
+            logger.info('UserStore', 'VIP claim: already claimed today');
+          }
         } catch (e) {
           logger.warn('UserStore', 'VIP claim: claimDayVip failed', e);
         }
@@ -393,7 +398,8 @@ export const useUserStore = defineStore('user', {
           try {
             const payload = asApiPayload(await upgradeDayVip());
             // 297002 表示今日已升级过，视为成功
-            upgraded = payload?.status === 1 || payload?.error_code === 297002;
+            upgraded =
+              payload?.status === 1 || Number(payload?.error_code ?? 0) === 297002;
             if (!upgraded) logger.warn('UserStore', 'VIP claim: upgradeDayVip rejected', payload);
           } catch (e) {
             logger.warn('UserStore', 'VIP claim: upgradeDayVip failed', e);
@@ -466,7 +472,7 @@ export const useUserStore = defineStore('user', {
           if (payload?.status === 1) {
             listen = 'ok';
             logger.info('UserStore', 'Check-in: listen claim succeeded');
-          } else if (payload?.error_code === 130012) {
+          } else if (Number(payload?.error_code ?? 0) === 130012) {
             listen = 'claimed';
             logger.info('UserStore', 'Check-in: listen claim already done today');
           } else {
@@ -490,7 +496,7 @@ export const useUserStore = defineStore('user', {
             if (payload?.status === 1) {
               this.vipAdClaimCount += 1;
               logger.info('UserStore', `Check-in: ad claim ${round} succeeded`);
-            } else if (payload?.error_code === 30002) {
+            } else if (Number(payload?.error_code ?? 0) === 30002) {
               exhausted = true;
               shouldContinue = false;
               logger.info('UserStore', 'Check-in: daily ad quota used up');

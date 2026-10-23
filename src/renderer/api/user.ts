@@ -1,6 +1,31 @@
 import request from '@/utils/request';
 
 /**
+ * 酷狗的部分领取类接口在「今日已领 / 次数用光 / 今日已升级」这类业务终态下，
+ * 返回的是 HTTP 502 包裹的响应体（server 端统一错误包装），而不是 200。
+ *
+ * 这类响应不是网络故障，error_code 就在 body 里。若不还原成正常结果，
+ * 调用方只能拿到 `API Error: 502`，业务码丢失，会把「已领过」误报成失败。
+ */
+function withBusinessErrorBody<T>(pending: Promise<T>): Promise<T> {
+  return pending.catch((error: unknown) => {
+    const response = (error as { response?: { status?: number; body?: unknown } })?.response;
+    if (response?.status !== 502) throw error;
+
+    const body = response.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw error;
+
+    const record = body as Record<string, unknown>;
+    const code = record.error_code ?? record.err_code ?? record.errcode;
+    // 无业务码说明是真正的网关异常，继续抛给上层
+    if (code == null || Number(code) === 0) throw error;
+
+    return body as T;
+  });
+}
+
+
+/**
  * 注册设备获取 dfid/mid
  */
 export function registerDevice() {
@@ -363,16 +388,18 @@ export function sendUserFollowChat(params: SendUserFollowChatParams) {
  * 领取每日畅听会员
  */
 export function claimDayVip(day: string) {
-  return request.get('/youth/day/vip', {
-    params: { receive_day: day },
-  });
+  return withBusinessErrorBody(
+    request.get('/youth/day/vip', {
+      params: { receive_day: day },
+    }),
+  );
 }
 
 /**
  * 升级每日概念会员
  */
 export function upgradeDayVip() {
-  return request.get('/youth/day/vip/upgrade');
+  return withBusinessErrorBody(request.get('/youth/day/vip/upgrade'));
 }
 
 /**
@@ -387,22 +414,26 @@ export function getVipMonthRecord() {
  * 服务端会上报一条播放记录，未指定歌曲时使用内置默认值。
  */
 export function listenSongVip(mixsongid?: number) {
-  return request.get('/youth/listen/song', {
-    params: {
-      ...(typeof mixsongid === 'number' && mixsongid > 0 ? { mixsongid } : {}),
-      // 服务端对 200 响应有 2 分钟缓存，加时间戳保证每次都是新请求
-      timestrap: Date.now(),
-    },
-  });
+  return withBusinessErrorBody(
+    request.get('/youth/listen/song', {
+      params: {
+        ...(typeof mixsongid === 'number' && mixsongid > 0 ? { mixsongid } : {}),
+        // 服务端对 200 响应有 2 分钟缓存，加时间戳保证每次都是新请求
+        timestrap: Date.now(),
+      },
+    }),
+  );
 }
 
 /**
  * 播放广告领取一次 VIP 次数（每日最多 8 次）。
  */
 export function claimVipAd() {
-  return request.get('/youth/vip', {
-    params: { timestrap: Date.now() },
-  });
+  return withBusinessErrorBody(
+    request.get('/youth/vip', {
+      params: { timestrap: Date.now() },
+    }),
+  );
 }
 
 /**
