@@ -84,6 +84,11 @@ dist-ssr/
 release/
 release-final/
 release-b18/
+release-b19f/
+release-kg/
+release-kg-final/
+release-b20/
+release-b20-final/
 .nm-*/
 
 # Editor / tooling leftovers
