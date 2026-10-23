@@ -10,6 +10,7 @@ import {
 } from './store';
 import { registerNetworkSession } from '../networkPolicy';
 import { syncMacDockVisibility } from '../macBackgroundMode';
+import { installWindowBackgroundThrottling } from '../windowBackgroundThrottling';
 import {
   bindWindowBoundsPersistenceEvents,
   shouldFlushWindowBounds,
@@ -201,13 +202,15 @@ export const createDesktopLyricWindow = () => {
       enableWebSQL: false,
       webSecurity: false,
       allowRunningInsecureContent: true,
-      backgroundThrottling: true,
+      backgroundThrottling: true, // Initial hidden state; show/hide policy is installed below.
       zoomFactor: 1.0,
       partition: 'persist:desktop-lyric',
     },
   });
 
   desktopLyricWindow = win;
+
+  installWindowBackgroundThrottling(win);
 
   win.once('ready-to-show', () => {
     // 只有在内容准备就绪后才显示，避免灰色/黑色闪烁
