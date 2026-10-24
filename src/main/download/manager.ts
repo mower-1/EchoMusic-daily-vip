@@ -4,6 +4,7 @@ import { promises as fsp, existsSync } from 'fs';
 import { join } from 'path';
 import log from 'electron-log';
 import { getMainWindow } from '../window';
+import { getMainAppSettings } from '../storage/settings';
 import {
   sniffAudioFormat,
   isEncryptedFormat,
@@ -77,8 +78,11 @@ const ensureSaveDir = (dir: string): string => {
   return dir;
 };
 
-export const getDefaultSaveDir = (): string =>
-  ensureSaveDir(join(app.getPath('downloads'), '酷狗概念版'));
+export const getDefaultSaveDir = (): string => {
+  const configured = getMainAppSettings().downloadSaveDir?.trim();
+  if (configured) return ensureSaveDir(configured);
+  return ensureSaveDir(join(app.getPath('downloads'), '酷狗概念版'));
+};
 
 /** 解密是 CPU 密集操作，串行化避免多任务并发时内存峰值叠加。 */
 const runExclusive = <T>(job: () => Promise<T>): Promise<T> => {

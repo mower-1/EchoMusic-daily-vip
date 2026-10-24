@@ -57,6 +57,9 @@ const PluginSettingsSection = loadSection(
 const DataSettingsSection = loadSection(
   () => import('./settings/components/DataSettingsSection.vue'),
 );
+const CacheSettingsSection = loadSection(
+  () => import('./settings/components/CacheSettingsSection.vue'),
+);
 const AboutSettingsSection = loadSection(
   () => import('./settings/components/AboutSettingsSection.vue'),
 );
@@ -490,6 +493,13 @@ const builtinSettingsSections = computed<SettingsRenderSection[]>(() => [
     order: 1000,
     component: PluginSettingsSection,
     searchKeywords: ['插件管理', '管理面板', '在线插件源', '已安装插件', '插件设置', '插件文档'],
+  },
+  {
+    id: 'cache',
+    label: '缓存设置',
+    order: 1050,
+    component: CacheSettingsSection,
+    searchKeywords: ['缓存设置', '缓存目录', '缓存位置', '下载目录', '下载位置', '保存位置', '更改目录'],
   },
   {
     id: 'data',

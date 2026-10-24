@@ -83,19 +83,7 @@ const isQualityAvailable = (option: { value: string; level: number }): boolean =
   });
 };
 
-const isEffectAvailable = (value: string): boolean => {
-  if (value === 'none') return true;
-  const goods = props.song?.relateGoods ?? [];
-  if (!goods.length) return true;
-  return goods.some((item) => item.quality === toApiEffect(value) && item.hash);
-};
-
 const isStemEffect = computed(() => effect.value === 'vocal' || effect.value === 'accompaniment');
-
-const hasEffectGoods = computed(() => {
-  const goods = props.song?.relateGoods ?? [];
-  return goods.length > 0 && goods.some((item) => effectOptions.some((e) => e.value === item.quality));
-});
 
 const songSummary = computed(() => {
   const song = props.song;
@@ -139,15 +127,14 @@ const confirm = () => {
       </fieldset>
 
       <fieldset class="option-group">
-        <legend>歌曲音效<template v-if="!hasEffectGoods">（该歌曲可能未提供音效版本）</template></legend>
+        <legend>歌曲音效</legend>
         <div class="chip-row">
           <button
             v-for="item in effectOptions"
             :key="item.value"
             type="button"
             class="option-chip"
-            :class="{ selected: effect === item.value, unavailable: !isEffectAvailable(item.value) }"
-            :disabled="!isEffectAvailable(item.value)"
+            :class="{ selected: effect === item.value }"
             :aria-pressed="effect === item.value"
             @click="effect = item.value"
           >
@@ -155,6 +142,7 @@ const confirm = () => {
           </button>
         </div>
         <p v-if="isStemEffect" class="option-hint">人声/伴奏音效的缓存文件为 .mkv 音轨容器，可用播放器（如 VLC）打开</p>
+        <p class="option-hint">音效版本由酷狗按歌曲提供，若所选音效不可用会在下载时提示</p>
       </fieldset>
 
       <fieldset class="option-group">

@@ -26,9 +26,20 @@
           </div>
           <div
             v-if="playingId === task.id"
-            class="progress-track play-progress"
+            class="play-panel"
           >
-            <div class="progress-fill" :style="{ width: playPercent + '%' }"></div>
+            <div
+              class="progress-track play-seek"
+              @pointerdown="onSeekPointerDown"
+              @pointermove="onSeekPointerMove"
+              @pointerup="onSeekPointerUp"
+            >
+              <div class="progress-fill seek-fill" :style="{ width: playPercent + '%' }"></div>
+            </div>
+            <div class="time-row">
+              <span>{{ formatTime(playState.currentTime) }}</span>
+              <span>{{ formatTime(playState.duration) }}</span>
+            </div>
           </div>
           <div v-if="task.error" class="task-error">{{ task.error }}</div>
         </div>
@@ -39,7 +50,7 @@
             class="action-btn play-btn"
             @click="togglePlay(task)"
           >
-            {{ playingId === task.id ? '⏸ 暂停' : '▶ 播放' }}
+            {{ playingId === task.id && !isPaused ? '⏸ 暂停' : '▶ 播放' }}
           </button>
           <button
             v-if="task.status === 'queued' || task.status === 'downloading' || task.status === 'decrypting'"
@@ -147,7 +158,9 @@ const removeTask = (id: string) => {
 // --- 本地试听（file:// 直读，不影响主播放器状态） ---
 let audio: HTMLAudioElement | null = null;
 const playingId = ref<string | null>(null);
-const playState = reactive({ progress: 0 });
+const isPaused = ref(false);
+const playState = reactive({ currentTime: 0, duration: 0 });
+let seekPointerId: number | null = null;
 
 /** Windows 路径 → file:// URL（中文/空格安全编码） */
 const toFileUrl = (path: string) =>
@@ -163,29 +176,78 @@ const stopPlayback = () => {
     audio = null;
   }
   playingId.value = null;
-  playState.progress = 0;
+  isPaused.value = false;
+  playState.currentTime = 0;
+  playState.duration = 0;
+  seekPointerId = null;
 };
 
 const togglePlay = (task: DownloadTaskView) => {
-  if (playingId.value === task.id) {
-    stopPlayback();
+  // 同一条目：暂停 ↔ 续播
+  if (playingId.value === task.id && audio) {
+    if (audio.paused) {
+      void audio.play().catch(() => stopPlayback());
+      isPaused.value = false;
+    } else {
+      audio.pause();
+      isPaused.value = true;
+    }
     return;
   }
   stopPlayback();
   audio = new Audio(toFileUrl(task.filePath));
   audio.volume = 0.9;
   audio.ontimeupdate = () => {
-    if (audio && audio.duration > 0) playState.progress = Math.round((audio.currentTime / audio.duration) * 100);
+    if (audio && !Number.isNaN(audio.duration)) {
+      playState.currentTime = audio.currentTime;
+      playState.duration = audio.duration || 0;
+    }
   };
   audio.onended = stopPlayback;
   audio.onerror = () => {
     stopPlayback();
   };
   playingId.value = task.id;
+  isPaused.value = false;
   void audio.play().catch(() => stopPlayback());
 };
 
-const playPercent = computed(() => playState.progress);
+const playPercent = computed(() =>
+  playState.duration > 0 ? Math.min(100, (playState.currentTime / playState.duration) * 100) : 0,
+);
+
+const formatTime = (seconds: number) => {
+  if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+  const total = Math.floor(seconds);
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
+};
+
+// --- 进度条拖动 ---
+const seekTo = (event: PointerEvent, track: HTMLElement) => {
+  if (!audio || !playState.duration) return;
+  const rect = track.getBoundingClientRect();
+  const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width));
+  audio.currentTime = ratio * playState.duration;
+  playState.currentTime = audio.currentTime;
+};
+
+const onSeekPointerDown = (event: PointerEvent) => {
+  const track = event.currentTarget as HTMLElement;
+  seekPointerId = event.pointerId;
+  track.setPointerCapture(event.pointerId);
+  seekTo(event, track);
+};
+
+const onSeekPointerMove = (event: PointerEvent) => {
+  if (seekPointerId !== event.pointerId) return;
+  seekTo(event, event.currentTarget as HTMLElement);
+};
+
+const onSeekPointerUp = (event: PointerEvent) => {
+  if (seekPointerId === event.pointerId) seekPointerId = null;
+};
 
 onUnmounted(stopPlayback);
 
@@ -288,6 +350,29 @@ onMounted(async () => {
 
 .play-progress {
   transition: none;
+}
+
+.play-panel {
+  margin-top: 8px;
+}
+
+.progress-track.play-seek {
+  height: 6px;
+  cursor: pointer;
+  touch-action: none;
+}
+
+.progress-fill.seek-fill {
+  transition: none;
+}
+
+.time-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  font-size: 11px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
 }
 
 .task-error {

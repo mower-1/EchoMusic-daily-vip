@@ -17,6 +17,7 @@ import {
   iconCpu,
   iconSettings,
   iconShield,
+  iconFolderOpen,
   iconSlidersHorizontal,
   iconTypography,
 } from '@/icons';
@@ -38,6 +39,7 @@ export const sectionTitles = {
   cast: { label: '投放', icon: iconCast },
   experimental: { label: '实验性功能', icon: iconFlask },
   plugins: { label: '插件', icon: iconPlugin },
+  cache: { label: '缓存设置', icon: iconFolderOpen },
   data: { label: '数据与安全', icon: iconShield },
   network: { label: '网络设置', icon: iconCloud },
   about: { label: '关于', icon: iconInfo },

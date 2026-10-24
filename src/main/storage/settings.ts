@@ -46,6 +46,8 @@ export type MainAppSettings = ClosePreferences & {
   taskbarLyric: TaskbarLyricSettings;
   windowState: MainWindowState;
   miniPlayerWindowState: MiniPlayerWindowState;
+  /** 缓存目录；空串表示使用默认（系统下载目录/酷狗概念版） */
+  downloadSaveDir: string;
 };
 
 export type DesktopLyricWindowState = {
@@ -87,6 +89,7 @@ export const DEFAULT_MAIN_APP_SETTINGS: MainAppSettings = {
     height: 120,
     alwaysOnTop: false,
   },
+  downloadSaveDir: '',
 };
 
 export const DEFAULT_DESKTOP_LYRIC_PERSISTED_SETTINGS: DesktopLyricPersistedSettings = {

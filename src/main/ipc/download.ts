@@ -1,6 +1,8 @@
 import { shell } from 'electron';
 import { ipcRegistry } from './registry';
+import { showOpenDialogSafely } from './dialogHost';
 import { addDownload, cancelDownload, listDownloads, getDefaultSaveDir } from '../download/manager';
+import { setMainAppSetting } from '../storage/settings';
 
 export interface DownloadStartParams {
   url: string;
@@ -37,6 +39,17 @@ export function registerDownloadHandlers(): void {
   ipcRegistry.registerHandler('download:list', () => listDownloads());
 
   ipcRegistry.registerHandler('download:get-dir', () => getDefaultSaveDir());
+
+  ipcRegistry.registerHandler('download:choose-dir', async () => {
+    const result = await showOpenDialogSafely({
+      title: '选择缓存目录',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    const dir = result.filePaths[0];
+    setMainAppSetting('downloadSaveDir', dir);
+    return dir;
+  });
 
   ipcRegistry.registerHandler('download:reveal', (_event, id: string) => {
     const task = listDownloads().find((t) => t.id === id);
