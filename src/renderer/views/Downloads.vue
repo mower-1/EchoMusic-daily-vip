@@ -50,7 +50,7 @@
             class="action-btn play-btn"
             @click="togglePlay(task)"
           >
-            {{ playButtonLabel(task) }}
+            {{ playingId === task.id && !isPaused ? '⏸ 暂停' : '▶ 播放' }}
           </button>
           <button
             v-if="task.status === 'queued' || task.status === 'downloading' || task.status === 'decrypting'"
@@ -85,11 +85,9 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useDownloadStore } from '@/stores/download';
-import { useToastStore } from '@/stores/toast';
 import type { DownloadTaskView } from '@/api/download';
 
 const downloadStore = useDownloadStore();
-const toastStore = useToastStore();
 const tasks = computed(() => downloadStore.tasks);
 const saveDir = ref('');
 
@@ -168,17 +166,10 @@ let seekPointerId: number | null = null;
 const toFileUrl = (path: string) =>
   encodeURI('file:///' + path.replace(/\\/g, '/').replace(/^\/+/, ''));
 
-const isMkvTask = (task: DownloadTaskView) => task.format === 'mkv';
-
 const canPlay = (task: DownloadTaskView) =>
   task.status === 'done' &&
   Boolean(task.filePath) &&
-  (task.format !== 'kgm' && task.format !== 'vpr');
-
-const playButtonLabel = (task: DownloadTaskView) => {
-  if (isMkvTask(task)) return '▶ 主播放器播放';
-  return playingId.value === task.id && !isPaused.value ? '⏸ 暂停' : '▶ 播放';
-};
+  task.format !== 'mkv' && task.format !== 'kgm' && task.format !== 'vpr';
 
 const stopPlayback = () => {
   if (audio) {
@@ -193,51 +184,7 @@ const stopPlayback = () => {
   seekPointerId = null;
 };
 
-/** mkv（人声/伴奏分离轨）：交给主播放器原生引擎选轨播放 */
-const playMkvInMainPlayer = async (task: DownloadTaskView) => {
-  const player = window.electron.player;
-  if (!player) return;
-  stopPlayback();
-  const fileUrl = toFileUrl(task.filePath);
-  await player.beginSourceChange();
-  const isAccompaniment = task.effect === 'accompaniment';
-  let trackId: number | null = null;
-  try {
-    const tracks = ((await player.getTrackList(fileUrl)) ?? []).filter(
-      (t: { type?: string; id?: number }) => t?.type === 'audio' && Number(t.id) > 0,
-    );
-    const keywords = isAccompaniment
-      ? ['伴奏', 'accompaniment', 'instrumental', 'inst']
-      : ['人声', 'vocal', 'voice', 'vox', 'stem'];
-    const matched = tracks.find((t: { title?: string }) =>
-      keywords.some((k) => String(t.title ?? '').toLowerCase().includes(k)),
-    );
-    if (matched) {
-      trackId = Number(matched.id);
-    } else {
-      const preferred = isAccompaniment ? 1 : 2;
-      trackId =
-        Number(tracks.find((t: { id?: number }) => Number(t.id) === preferred)?.id) ||
-        Number(tracks[Math.min(preferred - 1, Math.max(0, tracks.length - 1))]?.id) ||
-        null;
-    }
-  } catch {
-    trackId = null;
-  }
-  if (!trackId) trackId = isAccompaniment ? 1 : 2;
-  await player.loadMkvTrack(fileUrl, trackId);
-  await player.play();
-  toastStore.show(
-    `已切换到主播放器播放${isAccompaniment ? '伴奏' : '人声'}轨（缓存文件为 mkv 容器）`,
-    'success',
-  );
-};
-
 const togglePlay = (task: DownloadTaskView) => {
-  if (isMkvTask(task)) {
-    void playMkvInMainPlayer(task);
-    return;
-  }
   // 同一条目：暂停 ↔ 续播
   if (playingId.value === task.id && audio) {
     if (audio.paused) {
