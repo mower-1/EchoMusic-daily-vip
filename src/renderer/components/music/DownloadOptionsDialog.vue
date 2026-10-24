@@ -114,30 +114,38 @@ const confirm = () => {
 
       <fieldset class="option-group" :disabled="effect !== 'none'">
         <legend>音质<template v-if="effect !== 'none'">（使用音效时按音效档位下载）</template></legend>
-        <label v-for="item in qualityOptions" :key="item.value" class="option-row">
-          <input
-            v-model="quality"
-            type="radio"
-            name="download-quality"
-            :value="item.value"
+        <div class="chip-row">
+          <button
+            v-for="item in qualityOptions"
+            :key="item.value"
+            type="button"
+            class="option-chip"
+            :class="{ selected: quality === item.value, unavailable: !isQualityAvailable(item) }"
             :disabled="!isQualityAvailable(item)"
-          />
-          <span :class="{ unavailable: !isQualityAvailable(item) }">{{ item.label }}</span>
-        </label>
+            :aria-pressed="quality === item.value"
+            @click="quality = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </div>
       </fieldset>
 
       <fieldset class="option-group">
         <legend>歌曲音效<template v-if="!hasEffectGoods">（该歌曲可能未提供音效版本）</template></legend>
-        <label v-for="item in effectOptions" :key="item.value" class="option-row">
-          <input
-            v-model="effect"
-            type="radio"
-            name="download-effect"
-            :value="item.value"
+        <div class="chip-row">
+          <button
+            v-for="item in effectOptions"
+            :key="item.value"
+            type="button"
+            class="option-chip"
+            :class="{ selected: effect === item.value, unavailable: !isEffectAvailable(item.value) }"
             :disabled="!isEffectAvailable(item.value)"
-          />
-          <span :class="{ unavailable: !isEffectAvailable(item.value) }">{{ item.label }}</span>
-        </label>
+            :aria-pressed="effect === item.value"
+            @click="effect = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </div>
       </fieldset>
 
       <fieldset class="option-group">
@@ -199,6 +207,55 @@ const confirm = () => {
   opacity: 0.85;
 }
 
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.option-chip {
+  appearance: none;
+  border: 1px solid var(--color-border, rgba(128, 128, 128, 0.35));
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  line-height: 1;
+  padding: 7px 14px;
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.option-chip:hover:not(:disabled):not(.selected) {
+  background: var(--control-hover-bg, rgba(128, 128, 128, 0.12));
+}
+
+.option-chip.selected {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-on-primary, #fff);
+  font-weight: 600;
+  box-shadow: 0 0 0 3px var(--color-primary-light, rgba(0, 204, 101, 0.15));
+}
+
+.option-chip:disabled {
+  cursor: not-allowed;
+}
+
+.option-chip.unavailable {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+
+.option-group:disabled .option-chip:not(.selected) {
+  opacity: 0.5;
+}
+
 .option-row {
   display: flex;
   align-items: center;
@@ -206,16 +263,6 @@ const confirm = () => {
   font-size: 13px;
   cursor: pointer;
   user-select: none;
-}
-
-.option-row input[type='radio'] {
-  accent-color: var(--color-primary, #3b82f6);
-  cursor: pointer;
-}
-
-.option-row .unavailable {
-  opacity: 0.45;
-  text-decoration: line-through;
 }
 
 .dialog-footer {
