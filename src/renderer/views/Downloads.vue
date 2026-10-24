@@ -69,25 +69,46 @@
             打开所在文件夹
           </button>
           <button
-            v-if="task.status === 'error' || task.status === 'canceled' || task.id.startsWith('file:')"
+            v-if="deletable(task)"
             type="button"
             class="action-btn danger"
-            @click="removeTask(task.id)"
+            @click="requestDelete(task)"
           >
-            移除
+            删除
           </button>
         </div>
       </li>
     </ul>
+
+    <Dialog v-model:open="deleteConfirmOpen" title="确认删除" showClose>
+      <div class="delete-confirm">
+        <p class="delete-text">
+          将从磁盘删除「{{ deleteTarget?.filename || deleteTarget?.songName || deleteTarget?.hash }}」，删除后无法恢复。
+        </p>
+        <div class="delete-option">
+          <Checkbox v-model="skipConfirmThisSession" aria-label="本次运行期间不再提醒" />
+          <span>本次运行期间不再提醒（重启应用后恢复）</span>
+        </div>
+        <div class="dialog-footer">
+          <Button variant="ghost" @click="deleteConfirmOpen = false">取消</Button>
+          <Button variant="primary" @click="confirmDelete">删除</Button>
+        </div>
+      </div>
+    </Dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useDownloadStore } from '@/stores/download';
+import { useToastStore } from '@/stores/toast';
 import { scanDownloadDir, type DownloadTaskView, type ScannedCacheFile } from '@/api/download';
+import Dialog from '@/components/ui/Dialog.vue';
+import Button from '@/components/ui/Button.vue';
+import Checkbox from '@/components/ui/Checkbox.vue';
 
 const downloadStore = useDownloadStore();
+const toastStore = useToastStore();
 const tasks = computed(() => {
   const donePaths = new Set(
     downloadStore.tasks.filter((t) => t.status === 'done' && t.filePath).map((t) => t.filePath),
@@ -180,10 +201,52 @@ const formatSize = (bytes: number) => {
   return `${value.toFixed(value >= 100 || index === 0 ? 0 : 1)} ${units[index]}`;
 };
 
+// --- 删除（从磁盘删除文件；首次操作弹确认，可勾选本次运行不再提醒） ---
+const deletable = (task: DownloadTaskView) =>
+  task.status === 'error' || task.status === 'canceled' || task.id.startsWith('file:');
+
+const deleteConfirmOpen = ref(false);
+const deleteTarget = ref<DownloadTaskView | null>(null);
+const skipConfirmThisSession = ref(false);
+
+const requestDelete = (task: DownloadTaskView) => {
+  deleteTarget.value = task;
+  if (skipConfirmThisSession.value) {
+    void confirmDelete();
+  } else {
+    deleteConfirmOpen.value = true;
+  }
+};
+
+const confirmDelete = async () => {
+  const task = deleteTarget.value;
+  deleteConfirmOpen.value = false;
+  if (!task) return;
+  if (playingId.value === task.id) stopPlayback();
+  // 目录扫描项 / 已完成且知道路径：删磁盘文件；其余（无路径的失败/取消记录）仅清理列表
+  if (task.filePath && (task.id.startsWith('file:') || task.status === 'done')) {
+    try {
+      const result = await window.electron.ipcRenderer.invoke('download:delete-file', task.filePath);
+      if (result === 'forbidden') {
+        toastStore.show('只能删除缓存目录内的文件', 'error');
+        return;
+      }
+    } catch {
+      toastStore.show('删除失败，文件可能被占用', 'error');
+      return;
+    }
+    toastStore.show('已删除', 'success');
+  }
+  if (task.id.startsWith('file:')) {
+    scannedFiles.value = scannedFiles.value.filter((s) => s.id !== task.id);
+  } else {
+    downloadStore.tasks = downloadStore.tasks.filter((t) => t.id !== task.id);
+  }
+};
+
 const removeTask = (id: string) => {
   if (playingId.value === id) stopPlayback();
   if (id.startsWith('file:')) {
-    // 目录扫描项：仅从列表隐藏，不删除文件
     scannedFiles.value = scannedFiles.value.filter((s) => s.id !== id);
     return;
   }
@@ -450,5 +513,36 @@ onMounted(async () => {
 
 .action-btn.danger {
   color: #e5544b;
+}
+
+.delete-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 320px;
+  padding: 4px 2px 2px;
+}
+
+.delete-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+.delete-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  opacity: 0.85;
+  user-select: none;
+}
+
+.dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 4px;
 }
 </style>

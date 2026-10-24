@@ -1,7 +1,7 @@
 import { app } from 'electron';
 import { createWriteStream } from 'fs';
 import { promises as fsp, existsSync } from 'fs';
-import { join } from 'path';
+import { join, resolve, sep } from 'path';
 import log from 'electron-log';
 import { getMainWindow } from '../window';
 import { getMainAppSettings } from '../storage/settings';
@@ -398,6 +398,21 @@ export const scanSaveDir = async (): Promise<ScannedCacheFile[]> => {
   } catch (error) {
     log.warn(`[Download] 扫描缓存目录失败: ${error instanceof Error ? error.message : error}`);
     return [];
+  }
+};
+
+/** 从磁盘删除缓存文件；仅允许删除缓存目录内的文件，防止误删任意路径 */
+export const deleteCacheFile = async (filePath: string): Promise<'deleted' | 'not-found' | 'forbidden'> => {
+  const normalized = resolve(filePath || '');
+  const saveDir = resolve(getDefaultSaveDir());
+  if (!normalized.startsWith(saveDir + sep) && normalized !== saveDir) return 'forbidden';
+  try {
+    await fsp.unlink(normalized);
+    return 'deleted';
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code;
+    if (code === 'ENOENT') return 'not-found';
+    throw error;
   }
 };
 

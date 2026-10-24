@@ -1,7 +1,7 @@
 import { shell } from 'electron';
 import { ipcRegistry } from './registry';
 import { showOpenDialogSafely } from './dialogHost';
-import { addDownload, cancelDownload, listDownloads, getDefaultSaveDir, scanSaveDir } from '../download/manager';
+import { addDownload, cancelDownload, listDownloads, getDefaultSaveDir, scanSaveDir, deleteCacheFile } from '../download/manager';
 import { setMainAppSetting } from '../storage/settings';
 
 export interface DownloadStartParams {
@@ -41,6 +41,10 @@ export function registerDownloadHandlers(): void {
   ipcRegistry.registerHandler('download:list', () => listDownloads());
 
   ipcRegistry.registerHandler('download:scan-dir', () => scanSaveDir());
+
+  ipcRegistry.registerHandler('download:delete-file', (_e, filePath: string) =>
+    deleteCacheFile(filePath),
+  );
 
   ipcRegistry.registerHandler('download:get-dir', () => getDefaultSaveDir());
 
