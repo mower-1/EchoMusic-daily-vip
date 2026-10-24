@@ -104,12 +104,12 @@ const confirm = () => {
 </script>
 
 <template>
-  <Dialog v-model:open="open" title="下载选项" showClose>
+  <Dialog v-model:open="open" title="缓存选项" showClose>
     <div class="download-options">
       <p class="song-summary">{{ songSummary }}</p>
 
       <fieldset class="option-group" :disabled="effect !== 'none'">
-        <legend>音质<template v-if="effect !== 'none'">（使用音效时按音效档位下载）</template></legend>
+        <legend>音质<template v-if="effect !== 'none'">（使用音效时按音效档位缓存）</template></legend>
         <div class="chip-row">
           <button
             v-for="item in qualityOptions"
@@ -142,24 +142,24 @@ const confirm = () => {
           </button>
         </div>
         <p v-if="isStemEffect" class="option-hint">人声/伴奏音效的缓存文件为 .mkv 音轨容器，可用播放器（如 VLC）打开</p>
-        <p class="option-hint">音效版本由酷狗按歌曲提供，若所选音效不可用会在下载时提示</p>
+        <p class="option-hint">音效版本由酷狗按歌曲提供，若所选音效不可用会在缓存时提示</p>
       </fieldset>
 
       <fieldset class="option-group">
         <legend>附加内容</legend>
         <div class="option-row">
-          <Checkbox v-model="withLyric" aria-label="同时下载歌词" />
-          <span>同时下载歌词（.lrc）</span>
+          <Checkbox v-model="withLyric" aria-label="同时缓存歌词" />
+          <span>同时缓存歌词（.lrc）</span>
         </div>
         <div class="option-row">
-          <Checkbox v-model="withCover" aria-label="同时下载封面" />
-          <span>同时下载封面图</span>
+          <Checkbox v-model="withCover" aria-label="同时缓存封面" />
+          <span>同时缓存封面图</span>
         </div>
       </fieldset>
 
       <div class="dialog-footer">
         <Button variant="ghost" @click="emit('update:open', false)">取消</Button>
-        <Button variant="primary" @click="confirm">开始下载</Button>
+        <Button variant="primary" @click="confirm">开始缓存</Button>
       </div>
     </div>
   </Dialog>
