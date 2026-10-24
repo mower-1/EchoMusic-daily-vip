@@ -44,6 +44,21 @@ export const cancelDownload = (id: string): Promise<boolean> =>
 export const listDownloads = (): Promise<DownloadTaskView[]> =>
   window.electron.ipcRenderer.invoke('download:list');
 
+export interface ScannedCacheFile {
+  id: string;
+  filename: string;
+  songName: string;
+  artist: string;
+  filePath: string;
+  format: string;
+  size: number;
+  finishedAt: number;
+}
+
+/** 扫描缓存目录中已存在的音频文件（本次会话之外产生的也能识别） */
+export const scanDownloadDir = (): Promise<ScannedCacheFile[]> =>
+  window.electron.ipcRenderer.invoke('download:scan-dir');
+
 export const getDownloadDir = (): Promise<string> =>
   window.electron.ipcRenderer.invoke('download:get-dir');
 

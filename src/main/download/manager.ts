@@ -5,6 +5,8 @@ import { join } from 'path';
 import log from 'electron-log';
 import { getMainWindow } from '../window';
 import { getMainAppSettings } from '../storage/settings';
+import { scanLocalFiles } from '../media/fileScanner';
+import { LOCAL_AUDIO_EXTENSIONS } from '../../shared/localMusic';
 import {
   sniffAudioFormat,
   isEncryptedFormat,
@@ -351,6 +353,53 @@ export function cancelDownload(id: string): boolean {
 export function listDownloads(): DownloadTask[] {
   return Array.from(tasks.values()).sort((a, b) => b.createdAt - a.createdAt);
 }
+
+export interface ScannedCacheFile {
+  /** 'file:<绝对路径>'，用于前端去重与移除 */
+  id: string;
+  filename: string;
+  songName: string;
+  artist: string;
+  filePath: string;
+  format: string;
+  size: number;
+  finishedAt: number;
+}
+
+/** 扫描缓存目录里已存在的音频文件（非本次会话产生的也能识别） */
+export const scanSaveDir = async (): Promise<ScannedCacheFile[]> => {
+  const dir = getDefaultSaveDir();
+  try {
+    const scan = await scanLocalFiles(dir, {
+      recursive: false,
+      extensions: LOCAL_AUDIO_EXTENSIONS,
+      limit: 2000,
+    });
+    return scan.files
+      .map((f) => {
+        const ext = f.extension.toLowerCase();
+        const base = f.name.replace(/\.[^.]+$/, '');
+        // 命名格式「歌名 - 歌手」：按最后一个 " - " 拆分
+        const idx = base.lastIndexOf(' - ');
+        const songName = idx > 0 ? base.slice(0, idx).trim() : base;
+        const artist = idx > 0 ? base.slice(idx + 3).trim() : '';
+        return {
+          id: `file:${f.path}`,
+          filename: f.name,
+          songName,
+          artist,
+          filePath: f.path,
+          format: ext,
+          size: f.size,
+          finishedAt: f.modifiedAt,
+        };
+      })
+      .sort((a, b) => b.finishedAt - a.finishedAt);
+  } catch (error) {
+    log.warn(`[Download] 扫描缓存目录失败: ${error instanceof Error ? error.message : error}`);
+    return [];
+  }
+};
 
 export function openDownloadFile(id: string): boolean {
   const task = tasks.get(id);

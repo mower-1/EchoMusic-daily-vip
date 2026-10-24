@@ -69,7 +69,7 @@
             打开所在文件夹
           </button>
           <button
-            v-if="task.status === 'error' || task.status === 'canceled'"
+            v-if="task.status === 'error' || task.status === 'canceled' || task.id.startsWith('file:')"
             type="button"
             class="action-btn danger"
             @click="removeTask(task.id)"
@@ -85,10 +85,40 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useDownloadStore } from '@/stores/download';
-import type { DownloadTaskView } from '@/api/download';
+import { scanDownloadDir, type DownloadTaskView, type ScannedCacheFile } from '@/api/download';
 
 const downloadStore = useDownloadStore();
-const tasks = computed(() => downloadStore.tasks);
+const tasks = computed(() => {
+  const donePaths = new Set(
+    downloadStore.tasks.filter((t) => t.status === 'done' && t.filePath).map((t) => t.filePath),
+  );
+  // 目录里已存在但不在本次会话记录中的文件，作为伪任务合并展示
+  const scannedAsTasks: DownloadTaskView[] = scannedFiles.value
+    .filter((s) => !donePaths.has(s.filePath))
+    .map((s) => ({
+      id: s.id,
+      url: '',
+      hash: s.id,
+      songName: s.songName,
+      artist: s.artist,
+      album: '',
+      quality: '',
+      saveDir: '',
+      filePath: s.filePath,
+      filename: s.filename,
+      total: s.size,
+      received: s.size,
+      status: 'done' as const,
+      format: s.format,
+      error: '',
+      createdAt: s.finishedAt,
+      finishedAt: s.finishedAt,
+    }));
+  return [...downloadStore.tasks, ...scannedAsTasks].sort(
+    (a, b) => (b.finishedAt || 0) - (a.finishedAt || 0),
+  );
+});
+const scannedFiles = ref<ScannedCacheFile[]>([]);
 const saveDir = ref('');
 
 const taskTitle = (task: DownloadTaskView) =>
@@ -152,6 +182,11 @@ const formatSize = (bytes: number) => {
 
 const removeTask = (id: string) => {
   if (playingId.value === id) stopPlayback();
+  if (id.startsWith('file:')) {
+    // 目录扫描项：仅从列表隐藏，不删除文件
+    scannedFiles.value = scannedFiles.value.filter((s) => s.id !== id);
+    return;
+  }
   downloadStore.tasks = downloadStore.tasks.filter((t) => t.id !== id);
 };
 
@@ -256,6 +291,7 @@ onUnmounted(stopPlayback);
 onMounted(async () => {
   await downloadStore.refresh();
   saveDir.value = await window.electron.ipcRenderer.invoke('download:get-dir');
+  scannedFiles.value = await scanDownloadDir().catch(() => []);
 });
 </script>
 
