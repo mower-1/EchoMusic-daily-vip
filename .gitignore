@@ -89,6 +89,9 @@ release-kg/
 release-kg-final/
 release-b20/
 release-b20-final/
+release-dl/
+release-dl2/
+release-dl2-final/
 .nm-*/
 
 # Editor / tooling leftovers

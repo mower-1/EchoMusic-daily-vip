@@ -11,6 +11,9 @@ import { usePlayerStore } from '@/stores/player';
 import { useSettingStore } from '@/stores/setting';
 import { isTransientPlaybackQueue, usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
+import { useDownloadStore } from '@/stores/download';
+import { getSongUrl } from '@/api/music';
+import { resolveUrlFromResponse } from '@/stores/player/utils';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong, formatSongInfoText } from '@/utils/song';
 import {
@@ -759,6 +762,34 @@ const ctxCopySongInfo = async () => {
   }
 };
 
+const ctxDownloadSong = async () => {
+  const song = contextMenuTarget.value;
+  if (!song?.hash) return;
+  const downloadStore = useDownloadStore();
+  try {
+    toastStore.show('正在获取下载地址…', 'info');
+    const res = await getSongUrl(song.hash, '', undefined, {
+      albumId: song.albumId,
+      albumAudioId: song.albumAudioId,
+    });
+    const url = resolveUrlFromResponse(res);
+    if (!url) {
+      toastStore.actionFailed('获取下载地址');
+      return;
+    }
+    await downloadStore.start({
+      url,
+      hash: song.hash,
+      songName: song.title || song.name || song.hash,
+      artist: song.artist,
+      album: song.album || song.albumName,
+      quality: '',
+    });
+  } catch {
+    toastStore.actionFailed('下载');
+  }
+};
+
 const ctxSelectPlaylist = async (listId: string | number) => {
   const song = contextMenuTarget.value;
   if (!song) return;
@@ -1104,6 +1135,14 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         从歌单删除
       </button>
       <div class="song-context-separator"></div>
+      <button
+        type="button"
+        class="song-context-item"
+        role="menuitem"
+        @click="handleContextMenuAction(ctxDownloadSong)"
+      >
+        下载
+      </button>
       <button
         type="button"
         class="song-context-item"

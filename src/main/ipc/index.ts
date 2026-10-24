@@ -22,6 +22,7 @@ import { registerCloudHandlers } from './cloud';
 import { registerSettingsBackupHandlers } from './settingsBackup';
 import { registerRecognizeHandlers } from './recognize';
 import { registerOpenccHandlers } from './opencc';
+import { registerDownloadHandlers } from './download';
 import type { IpcContext } from './types';
 
 let registered = false;
@@ -50,6 +51,7 @@ export const registerIpcHandlers = (context: IpcContext) => {
   registerSettingsBackupHandlers();
   registerRecognizeHandlers();
   registerOpenccHandlers();
+  registerDownloadHandlers();
   registerThemeAssetHandlers();
   registered = true;
 };

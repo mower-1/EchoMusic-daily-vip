@@ -123,6 +123,12 @@ const routes: RouteRecordRaw[] = [
         meta: { tabQueryKeys: ['tab'] },
       },
       {
+        path: 'downloads',
+        name: 'downloads',
+        component: () => import('@/views/Downloads.vue'),
+        meta: { title: '下载管理' },
+      },
+      {
         path: 'profile',
         name: 'profile',
         component: () => import('@/views/Profile.vue'),
