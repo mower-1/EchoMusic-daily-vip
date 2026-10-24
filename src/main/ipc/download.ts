@@ -10,6 +10,8 @@ export interface DownloadStartParams {
   album?: string;
   quality?: string;
   saveDir?: string;
+  lrcContent?: string;
+  coverUrl?: string;
 }
 
 export function registerDownloadHandlers(): void {
@@ -25,6 +27,8 @@ export function registerDownloadHandlers(): void {
       album: params.album,
       quality: params.quality,
       saveDir: params.saveDir,
+      lrcContent: params.lrcContent,
+      coverUrl: params.coverUrl,
     });
   });
 

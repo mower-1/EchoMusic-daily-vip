@@ -24,6 +24,7 @@ export type AudioFormat =
   | 'm4a'
   | 'wav'
   | 'ape'
+  | 'mkv'
   | 'kgm'
   | 'vpr'
   | 'unknown';
@@ -50,6 +51,8 @@ export function sniffAudioFormat(head: Uint8Array): AudioFormat {
   if (head[0] === 0x52 && head[1] === 0x49 && head[2] === 0x46 && head[3] === 0x46) return 'wav';
   // Monkey's Audio
   if (head[0] === 0x4d && head[1] === 0x41 && head[2] === 0x43 && head[3] === 0x20) return 'ape';
+  // EBML (Matroska/WebM，人声伴奏分离等音效流)
+  if (head[0] === 0x1a && head[1] === 0x45 && head[2] === 0xdf && head[3] === 0xa3) return 'mkv';
   return 'unknown';
 }
 

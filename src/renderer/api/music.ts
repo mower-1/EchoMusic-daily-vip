@@ -244,9 +244,9 @@ export function searchLyric(
 /**
  * 获取歌词详情
  */
-export function getLyric(id: string, accesskey: string) {
+export function getLyric(id: string, accesskey: string, fmt: 'krc' | 'lrc' = 'krc') {
   return request.get('/lyric', {
-    params: { id, accesskey, decode: 'true', fmt: 'krc' },
+    params: { id, accesskey, decode: 'true', fmt },
   });
 }
 

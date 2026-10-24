@@ -12,7 +12,8 @@ import { useSettingStore } from '@/stores/setting';
 import { isTransientPlaybackQueue, usePlaylistStore } from '@/stores/playlist';
 import { useToastStore } from '@/stores/toast';
 import { useDownloadStore } from '@/stores/download';
-import { getSongUrl } from '@/api/music';
+import DownloadOptionsDialog, { type DownloadOptions } from '@/components/music/DownloadOptionsDialog.vue';
+import { getSongUrl, searchLyric, getLyric } from '@/api/music';
 import { resolveUrlFromResponse } from '@/stores/player/utils';
 import { buildSongListGridTemplate } from './songListLayout';
 import { isPlayableSong, formatSongInfoText } from '@/utils/song';
@@ -762,13 +763,46 @@ const ctxCopySongInfo = async () => {
   }
 };
 
-const ctxDownloadSong = async () => {
+const downloadDialogOpen = ref(false);
+const downloadDialogSong = ref<Song | null>(null);
+const downloadStarting = ref(false);
+
+const ctxDownloadSong = () => {
   const song = contextMenuTarget.value;
   if (!song?.hash) return;
+  downloadDialogSong.value = song;
+  downloadDialogOpen.value = true;
+};
+
+/** 拉取 LRC 纯文本歌词；拿不到返回空串，不阻塞下载。 */
+const fetchLyricText = async (song: Song): Promise<string> => {
+  try {
+    const res = await searchLyric({ hash: song.hash, albumAudioId: song.albumAudioId });
+    const payload = (res as { body?: unknown })?.body ?? res;
+    const record = payload as {
+      candidates?: Array<{ id?: string | number; accesskey?: string }>;
+      info?: Array<{ id?: string | number; accesskey?: string }>;
+    } | null;
+    const candidates = record?.candidates?.length ? record.candidates : (record?.info ?? []);
+    const first = candidates.find((c) => c.id != null && c.accesskey);
+    if (!first) return '';
+    const detail = await getLyric(String(first.id), String(first.accesskey), 'lrc');
+    const body = (detail as { body?: { decodeContent?: string; content?: string } })?.body;
+    return String(body?.decodeContent || body?.content || '');
+  } catch {
+    return '';
+  }
+};
+
+const startDownloadWithOptions = async (options: DownloadOptions) => {
+  const song = downloadDialogSong.value;
+  if (!song?.hash || downloadStarting.value) return;
+  downloadStarting.value = true;
   const downloadStore = useDownloadStore();
   try {
     toastStore.show('正在获取下载地址…', 'info');
-    const res = await getSongUrl(song.hash, '', undefined, {
+    const qualityParam = options.effect !== 'none' ? options.effect : options.quality;
+    const res = await getSongUrl(song.hash, qualityParam, undefined, {
       albumId: song.albumId,
       albumAudioId: song.albumAudioId,
     });
@@ -777,16 +811,25 @@ const ctxDownloadSong = async () => {
       toastStore.actionFailed('获取下载地址');
       return;
     }
+    let lrcContent = '';
+    if (options.withLyric) {
+      lrcContent = await fetchLyricText(song);
+      if (!lrcContent) toastStore.show('未找到可用歌词，仅下载音频', 'info');
+    }
     await downloadStore.start({
       url,
       hash: song.hash,
       songName: song.title || song.name || song.hash,
       artist: song.artist,
       album: song.album || song.albumName,
-      quality: '',
+      quality: qualityParam,
+      lrcContent: lrcContent || undefined,
+      coverUrl: options.withCover ? song.coverUrl || song.cover || undefined : undefined,
     });
   } catch {
     toastStore.actionFailed('下载');
+  } finally {
+    downloadStarting.value = false;
   }
 };
 
@@ -1161,6 +1204,12 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
       </button>
     </div>
   </Teleport>
+
+  <DownloadOptionsDialog
+    v-model:open="downloadDialogOpen"
+    :song="downloadDialogSong"
+    @confirm="startDownloadWithOptions"
+  />
 </template>
 
 <style scoped>

@@ -30,6 +30,8 @@ export interface DownloadTask {
   saveDir: string;
   filePath: string;
   filename: string;
+  lrcContent?: string;
+  coverUrl?: string;
   total: number;
   received: number;
   status: DownloadStatus;
@@ -178,28 +180,63 @@ async function executeTask(task: DownloadTask, signal: AbortSignal): Promise<voi
     format = format === 'vpr' ? 'mp3' : 'flac';
   }
 
-  // 酷狗的 title/name 字段本身常是「歌手 - 歌名」格式，与 artist 拼接会重复，
-  // 落盘前把与 artist 重复的前缀剥掉（精确匹配 + 忽略空格差异的宽松匹配）。
+  // 酷狗的 title/name 字段本身常是「歌手 - 歌名」或「歌名 - 歌手」格式，与 artist
+  // 拼接会重复。落盘前把与 artist 重复的前缀/后缀剥掉
+  // （精确匹配 + 忽略空格/下划线/大小写差异的宽松匹配）。
   const collapseName = (name: string, artist?: string): string => {
     const trimmed = (name || '').trim();
     const a = (artist || '').trim();
     if (!trimmed || !a) return trimmed;
-    if (trimmed.startsWith(`${a} - `)) return trimmed.slice(a.length + 3);
-    const squashed = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+    if (trimmed.startsWith(`${a} - `)) return trimmed.slice(a.length + 3).trim();
+    if (trimmed.endsWith(` - ${a}`)) return trimmed.slice(0, trimmed.length - a.length - 3).trim();
+    const squashed = (v: string) => v.replace(/[\s_]+/g, '').toLowerCase();
     if (squashed(a)) {
-      const m = trimmed.match(/^([^-]{1,80}?)\s*-\s*(.+)$/);
-      if (m && squashed(m[1]) === squashed(a)) return m[2].trim();
+      const prefix = trimmed.match(/^([^-]{1,80}?)\s*-\s*(.+)$/);
+      if (prefix && squashed(prefix[1]) === squashed(a)) return prefix[2].trim();
+      const suffix = trimmed.match(/^(.+?)\s*-\s*([^-]{1,80})$/);
+      if (suffix && squashed(suffix[2]) === squashed(a)) return suffix[1].trim();
     }
     return trimmed;
   };
   const songTitle = collapseName(task.songName, task.artist) || task.songName || task.hash;
-  const baseName = sanitizeName(task.artist ? `${task.artist} - ${songTitle}` : songTitle);
+  // 命名格式：「歌名 - 歌手」
+  const baseName = sanitizeName(
+    task.artist && task.artist.trim() !== songTitle ? `${songTitle} - ${task.artist}` : songTitle,
+  );
   const ext = format === 'unknown' ? 'bin' : format;
   task.filePath = resolveConflict(join(task.saveDir, `${baseName}.${ext}`));
   task.filename = task.filePath.slice(task.filePath.lastIndexOf('\\') + 1).split('\\').pop() || '';
 
   await fsp.writeFile(task.filePath, finalData);
   await fsp.unlink(tempPath).catch(() => undefined);
+
+  // 附加文件：歌词 / 封面（失败不影响音频任务状态）
+  if (task.lrcContent?.trim()) {
+    const lrcPath = resolveConflict(join(task.saveDir, `${baseName}.lrc`));
+    await fsp.writeFile(lrcPath, task.lrcContent, 'utf8').catch((error: unknown) => {
+      log.warn(`[Download] 歌词写入失败: ${error instanceof Error ? error.message : error}`);
+    });
+  }
+  if (task.coverUrl) {
+    try {
+      const coverRes = await fetch(task.coverUrl, { signal });
+      if (coverRes.ok) {
+        const buf = new Uint8Array(await coverRes.arrayBuffer());
+        if (buf.length > 0) {
+          const type = (coverRes.headers.get('content-type') || '').split('/')[1] || 'jpg';
+          const ext = type.replace(/[^a-z0-9]/gi, '').slice(0, 5) || 'jpg';
+          const coverPath = resolveConflict(join(task.saveDir, `${baseName}.${ext}`));
+          await fsp.writeFile(coverPath, buf);
+        }
+      } else {
+        log.warn(`[Download] 封面下载失败 (HTTP ${coverRes.status})`);
+      }
+    } catch (error) {
+      if (!signal.aborted) {
+        log.warn(`[Download] 封面下载失败: ${error instanceof Error ? error.message : error}`);
+      }
+    }
+  }
 
   task.status = 'done';
   task.finishedAt = Date.now();
@@ -245,6 +282,8 @@ export function addDownload(params: {
   album?: string;
   quality?: string;
   saveDir?: string;
+  lrcContent?: string;
+  coverUrl?: string;
 }): DownloadTask {
   const existing = Array.from(tasks.values()).find(
     (t) => t.hash === params.hash && t.quality === (params.quality || '') &&
@@ -263,6 +302,8 @@ export function addDownload(params: {
     saveDir: ensureSaveDir(params.saveDir || getDefaultSaveDir()),
     filePath: '',
     filename: '',
+    lrcContent: params.lrcContent || undefined,
+    coverUrl: params.coverUrl || undefined,
     total: 0,
     received: 0,
     status: 'queued',

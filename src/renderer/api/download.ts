@@ -26,6 +26,10 @@ export interface DownloadStartParams {
   album?: string;
   quality?: string;
   saveDir?: string;
+  /** 同时保存的歌词内容（LRC 纯文本） */
+  lrcContent?: string;
+  /** 同时下载的封面图地址 */
+  coverUrl?: string;
 }
 
 export const startDownload = (params: DownloadStartParams): Promise<DownloadTaskView> =>
