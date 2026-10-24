@@ -41,13 +41,19 @@ const qualityOptions = [
 ];
 
 const effectOptions = [
-  { value: 'none', label: '不使用音效' },
+  { value: 'none', label: '原声' },
   { value: 'piano', label: '钢琴' },
-  { value: 'subwoofer', label: '乐器' },
+  { value: 'vocal', label: '人声' },
+  { value: 'accompaniment', label: '伴奏' },
+  { value: 'subwoofer', label: '骨笛' },
   { value: 'ancient', label: '尤克里里' },
-  { value: 'dj', label: 'DJ' },
   { value: 'surnay', label: '唢呐' },
+  { value: 'dj', label: 'DJ' },
 ];
+
+/** 人声/伴奏与播放器一致，走 acappella 分离轨（原始流为 mkv 容器）。 */
+const toApiEffect = (value: string): string =>
+  value === 'vocal' || value === 'accompaniment' ? 'acappella' : value;
 
 const quality = ref('320');
 const effect = ref('none');
@@ -81,8 +87,10 @@ const isEffectAvailable = (value: string): boolean => {
   if (value === 'none') return true;
   const goods = props.song?.relateGoods ?? [];
   if (!goods.length) return true;
-  return goods.some((item) => item.quality === value && item.hash);
+  return goods.some((item) => item.quality === toApiEffect(value) && item.hash);
 };
+
+const isStemEffect = computed(() => effect.value === 'vocal' || effect.value === 'accompaniment');
 
 const hasEffectGoods = computed(() => {
   const goods = props.song?.relateGoods ?? [];
@@ -146,6 +154,7 @@ const confirm = () => {
             {{ item.label }}
           </button>
         </div>
+        <p v-if="isStemEffect" class="option-hint">人声/伴奏音效的缓存文件为 .mkv 音轨容器，可用播放器（如 VLC）打开</p>
       </fieldset>
 
       <fieldset class="option-group">
@@ -254,6 +263,12 @@ const confirm = () => {
 
 .option-group:disabled .option-chip:not(.selected) {
   opacity: 0.5;
+}
+
+.option-hint {
+  margin: 0;
+  font-size: 12px;
+  opacity: 0.6;
 }
 
 .option-row {

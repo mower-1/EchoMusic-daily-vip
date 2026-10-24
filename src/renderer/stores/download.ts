@@ -59,7 +59,7 @@ export const useDownloadStore = defineStore('download', {
         if (task.status === 'done') {
           toast.show(`文件已存在：${task.filename}`, 'success');
         } else {
-          toast.show('已加入下载队列', 'success');
+          toast.show('已加入缓存队列', 'success');
         }
         return task;
       } catch (error) {

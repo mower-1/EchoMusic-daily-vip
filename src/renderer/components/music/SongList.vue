@@ -801,7 +801,13 @@ const startDownloadWithOptions = async (options: DownloadOptions) => {
   const downloadStore = useDownloadStore();
   try {
     toastStore.show('正在获取下载地址…', 'info');
-    const qualityParam = options.effect !== 'none' ? options.effect : options.quality;
+    // 人声/伴奏与播放器一致走 acappella 分离轨；其余魔法音效直接用音效值
+    const qualityParam =
+      options.effect === 'vocal' || options.effect === 'accompaniment'
+        ? 'acappella'
+        : options.effect !== 'none'
+          ? options.effect
+          : options.quality;
     const res = await getSongUrl(song.hash, qualityParam, undefined, {
       albumId: song.albumId,
       albumAudioId: song.albumAudioId,
@@ -1184,7 +1190,7 @@ defineExpose({ scrollToActive, filteredCount: computed(() => filteredSongsRef.va
         role="menuitem"
         @click="handleContextMenuAction(ctxDownloadSong)"
       >
-        下载
+        缓存
       </button>
       <button
         type="button"

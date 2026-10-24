@@ -232,7 +232,7 @@ const builtinSidebarSections = [
       {
         id: 'downloads',
         key: 'downloads',
-        title: '下载管理',
+        title: '缓存管理',
         path: '/main/downloads',
         builtinIcon: 'download',
         order: 60,
