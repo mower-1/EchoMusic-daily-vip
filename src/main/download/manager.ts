@@ -33,6 +33,8 @@ export interface DownloadTask {
   filename: string;
   lrcContent?: string;
   coverUrl?: string;
+  /** 选择的音效（none/piano/vocal/...），人声/伴奏的 mkv 需要它选轨 */
+  effect?: string;
   total: number;
   received: number;
   status: DownloadStatus;
@@ -288,6 +290,7 @@ export function addDownload(params: {
   saveDir?: string;
   lrcContent?: string;
   coverUrl?: string;
+  effect?: string;
 }): DownloadTask {
   const existing = Array.from(tasks.values()).find(
     (t) => t.hash === params.hash && t.quality === (params.quality || '') &&
@@ -308,6 +311,7 @@ export function addDownload(params: {
     filename: '',
     lrcContent: params.lrcContent || undefined,
     coverUrl: params.coverUrl || undefined,
+    effect: params.effect || undefined,
     total: 0,
     received: 0,
     status: 'queued',

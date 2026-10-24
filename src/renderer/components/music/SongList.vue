@@ -831,6 +831,7 @@ const startDownloadWithOptions = async (options: DownloadOptions) => {
       quality: qualityParam,
       lrcContent: lrcContent || undefined,
       coverUrl: options.withCover ? song.coverUrl || song.cover || undefined : undefined,
+      effect: options.effect,
     });
   } catch {
     toastStore.actionFailed('下载');

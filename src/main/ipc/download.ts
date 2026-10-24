@@ -14,6 +14,7 @@ export interface DownloadStartParams {
   saveDir?: string;
   lrcContent?: string;
   coverUrl?: string;
+  effect?: string;
 }
 
 export function registerDownloadHandlers(): void {
@@ -31,6 +32,7 @@ export function registerDownloadHandlers(): void {
       saveDir: params.saveDir,
       lrcContent: params.lrcContent,
       coverUrl: params.coverUrl,
+      effect: params.effect,
     });
   });
 

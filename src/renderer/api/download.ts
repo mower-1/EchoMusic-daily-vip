@@ -14,6 +14,7 @@ export interface DownloadTaskView {
   status: 'queued' | 'downloading' | 'decrypting' | 'done' | 'error' | 'canceled';
   format: string | null;
   error: string;
+  effect?: string;
   createdAt: number;
   finishedAt: number;
 }
@@ -30,6 +31,8 @@ export interface DownloadStartParams {
   lrcContent?: string;
   /** 同时下载的封面图地址 */
   coverUrl?: string;
+  /** 选择的音效（人声/伴奏的 mkv 播放需要它选轨） */
+  effect?: string;
 }
 
 export const startDownload = (params: DownloadStartParams): Promise<DownloadTaskView> =>
