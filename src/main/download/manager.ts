@@ -178,9 +178,22 @@ async function executeTask(task: DownloadTask, signal: AbortSignal): Promise<voi
     format = format === 'vpr' ? 'mp3' : 'flac';
   }
 
-  const baseName = sanitizeName(
-    task.artist ? `${task.artist} - ${task.songName}` : task.songName || task.hash,
-  );
+  // 酷狗的 title/name 字段本身常是「歌手 - 歌名」格式，与 artist 拼接会重复，
+  // 落盘前把与 artist 重复的前缀剥掉（精确匹配 + 忽略空格差异的宽松匹配）。
+  const collapseName = (name: string, artist?: string): string => {
+    const trimmed = (name || '').trim();
+    const a = (artist || '').trim();
+    if (!trimmed || !a) return trimmed;
+    if (trimmed.startsWith(`${a} - `)) return trimmed.slice(a.length + 3);
+    const squashed = (v: string) => v.replace(/\s+/g, '').toLowerCase();
+    if (squashed(a)) {
+      const m = trimmed.match(/^([^-]{1,80}?)\s*-\s*(.+)$/);
+      if (m && squashed(m[1]) === squashed(a)) return m[2].trim();
+    }
+    return trimmed;
+  };
+  const songTitle = collapseName(task.songName, task.artist) || task.songName || task.hash;
+  const baseName = sanitizeName(task.artist ? `${task.artist} - ${songTitle}` : songTitle);
   const ext = format === 'unknown' ? 'bin' : format;
   task.filePath = resolveConflict(join(task.saveDir, `${baseName}.${ext}`));
   task.filename = task.filePath.slice(task.filePath.lastIndexOf('\\') + 1).split('\\').pop() || '';
