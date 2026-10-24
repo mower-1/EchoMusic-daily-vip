@@ -11,6 +11,7 @@ import {
   resolveWindowBackgroundCapabilities,
 } from '../../shared/windowBackgroundStrategy';
 import { BrowserWindow, shell, app, nativeTheme, powerSaveBlocker, screen } from 'electron';
+import log from 'electron-log';
 import { join } from 'path';
 import { normalizeClosePreferences, type ThemeMode } from '../../shared/app';
 import {
@@ -519,7 +520,47 @@ export async function createWindow() {
   const mainWindow = win;
   initialMaximizePending = rememberWindowSize && initialWindowState.isMaximized === true;
   const startupPresentationRevision = windowPresentationRevision;
+  // --- 启动看门狗 ---
+  // 主窗口 show:false，等渲染进程挂载回调才显示。若首启时系统卡顿（典型：安装后
+  // 杀软全盘扫描）导致渲染进程迟迟起不来，应用会无窗口地挂着并占住单实例锁，
+  // 用户看到的就是「双击没反应」。此处兜底：30 秒未挂载则显示窗口并重载一次；
+  // 再过 25 秒仍未挂载则保留窗口（用户至少能看到白屏并手动关闭，不会再卡住启动器）。
+  let pageMounted = false;
+  let watchdogReloaded = false;
+  const armStartupWatchdog = (delayMs: number, onFire: () => void) => {
+    const timer = setTimeout(() => {
+      if (pageMounted || isQuitting || mainWindow.isDestroyed()) return;
+      onFire();
+    }, delayMs);
+    timer.unref?.();
+    return timer;
+  };
+  const startupWatchdog = armStartupWatchdog(30_000, () => {
+    log.error('[Startup] Watchdog: renderer did not mount within 30s, forcing show + reload');
+    watchdogReloaded = true;
+    try {
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.webContents.reload();
+    } catch (error) {
+      log.error('[Startup] Watchdog reload failed:', error);
+    }
+    armStartupWatchdog(25_000, () => {
+      log.error('[Startup] Watchdog: renderer still not mounted after reload, leaving window visible');
+      try {
+        if (!mainWindow.isVisible()) mainWindow.show();
+      } catch { /* ignore */ }
+    });
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    // 仅处理「挂载前」的渲染进程死亡；运行期崩溃由现有恢复逻辑负责
+    if (pageMounted || isQuitting || watchdogReloaded) return;
+    log.error('[Startup] Renderer gone before mount:', details.reason);
+    try {
+      if (!mainWindow.isDestroyed()) mainWindow.webContents.reload();
+    } catch { /* ignore */ }
+  });
   mainWindowStartup = waitForMainWindowStartup(mainWindow, () => {
+    pageMounted = true;
     flushPersistWindowState();
     void logMainMemory('main window:page-mounted');
     if (
