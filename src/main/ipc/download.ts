@@ -1,4 +1,5 @@
 import { shell } from 'electron';
+import { existsSync } from 'fs';
 import { ipcRegistry } from './registry';
 import { showOpenDialogSafely } from './dialogHost';
 import { addDownload, cancelDownload, listDownloads, getDefaultSaveDir, scanSaveDir, deleteCacheFile } from '../download/manager';
@@ -60,6 +61,15 @@ export function registerDownloadHandlers(): void {
   });
 
   ipcRegistry.registerHandler('download:reveal', (_event, id: string) => {
+    // 目录扫描出的历史文件（伪任务 id = 'file:<路径>'）不在会话任务表里，直接按路径处理
+    if (typeof id === 'string' && id.startsWith('file:')) {
+      const filePath = id.slice('file:'.length);
+      if (filePath && existsSync(filePath)) {
+        shell.showItemInFolder(filePath);
+        return true;
+      }
+      return false;
+    }
     const task = listDownloads().find((t) => t.id === id);
     if (task?.filePath) {
       shell.showItemInFolder(task.filePath);
