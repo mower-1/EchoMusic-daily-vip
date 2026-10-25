@@ -99,3 +99,6 @@ release-dl2-final/
 .claude/
 .aider*
 *.code-workspace
+
+# 本地构建产物（electron-builder 输出目录）
+/release-*/
