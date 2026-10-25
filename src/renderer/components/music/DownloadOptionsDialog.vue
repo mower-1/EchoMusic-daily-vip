@@ -4,7 +4,7 @@ import { useVModel } from '@vueuse/core';
 import Dialog from '@/components/ui/Dialog.vue';
 import Button from '@/components/ui/Button.vue';
 import Checkbox from '@/components/ui/Checkbox.vue';
-import { isViperAudioQuality } from '@/utils/song';
+import { formatSongInfoText, isViperAudioQuality } from '@/utils/song';
 import type { Song } from '@/models/song';
 
 export interface DownloadOptions {
@@ -86,10 +86,9 @@ const isQualityAvailable = (option: { value: string; level: number }): boolean =
 const isStemEffect = computed(() => effect.value === 'vocal' || effect.value === 'accompaniment');
 
 const songSummary = computed(() => {
-  const song = props.song;
-  if (!song) return '';
-  const artist = song.artist ? ` - ${song.artist}` : '';
-  return `${song.title || song.name || song.hash}${artist}`;
+  if (!props.song) return '';
+  // formatSongInfoText 会剥离 title 里与歌手重复的前缀/后缀，避免「歌手 - 歌名 - 歌手」
+  return formatSongInfoText(props.song) || props.song.hash;
 });
 
 const confirm = () => {

@@ -342,12 +342,36 @@ const songArtistNames = (song: Pick<Song, 'artist' | 'artists' | 'singers'>): st
   return names.filter(Boolean);
 };
 
+const squashedArtistName = (value: string): string =>
+  value.replace(/[\s_]+/g, '').toLowerCase();
+
+/** 剥离 title 里与歌手重复的前缀或后缀（「歌手 - 歌名」/「歌名 - 歌手」都支持）。 */
 const stripArtistPrefix = (title: string, names: string[]): string => {
-  for (const name of names) {
-    const prefix = `${name} - `;
-    if (prefix.length > 3 && title.startsWith(prefix)) return title.slice(prefix.length).trim();
+  let result = title.trim();
+  for (const raw of names) {
+    const name = raw.trim();
+    if (!name || !result) continue;
+    if (result.startsWith(`${name} - `)) {
+      result = result.slice(name.length + 3).trim();
+      continue;
+    }
+    if (result.endsWith(` - ${name}`)) {
+      result = result.slice(0, result.length - name.length - 3).trim();
+      continue;
+    }
+    const squashed = squashedArtistName(name);
+    if (!squashed) continue;
+    const prefixMatch = result.match(/^([^-]{1,80}?)\s*-\s*(.+)$/);
+    if (prefixMatch && squashedArtistName(prefixMatch[1]) === squashed) {
+      result = prefixMatch[2].trim();
+      continue;
+    }
+    const suffixMatch = result.match(/^(.+?)\s*-\s*([^-]{1,80})$/);
+    if (suffixMatch && squashedArtistName(suffixMatch[2]) === squashed) {
+      result = suffixMatch[1].trim();
+    }
   }
-  return title;
+  return result;
 };
 
 export const getSongDisplayTitle = (
