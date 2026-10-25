@@ -63,7 +63,7 @@ export const useDownloadStore = defineStore('download', {
         }
         return task;
       } catch (error) {
-        toast.show(`下载失败：${error instanceof Error ? error.message : String(error)}`, 'error');
+        toast.show(`下载失败：${error instanceof Error ? error.message : String(error)}`, 'danger');
         return null;
       }
     },

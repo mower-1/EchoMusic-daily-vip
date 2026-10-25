@@ -50,7 +50,7 @@ onMounted(refreshDir);
         <p class="dir-label">缓存保存位置</p>
         <p class="dir-value" :title="saveDir">{{ saveDir || '（默认：系统下载目录\\酷狗概念版）' }}</p>
       </div>
-      <Button variant="default" :disabled="isChoosing" @click="chooseDir">更改目录…</Button>
+      <Button variant="soft-secondary" :disabled="isChoosing" @click="chooseDir">更改目录…</Button>
     </div>
     <p class="cache-note">更改后立即生效，已缓存的文件不会移动。右键歌曲选择「缓存」即可把音乐保存到该目录。</p>
   </SettingsSectionShell>

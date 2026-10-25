@@ -228,11 +228,11 @@ const confirmDelete = async () => {
     try {
       const result = await window.electron.ipcRenderer.invoke('download:delete-file', task.filePath);
       if (result === 'forbidden') {
-        toastStore.show('只能删除缓存目录内的文件', 'error');
+        toastStore.show('只能删除缓存目录内的文件', 'danger');
         return;
       }
     } catch {
-      toastStore.show('删除失败，文件可能被占用', 'error');
+      toastStore.show('删除失败，文件可能被占用', 'danger');
       return;
     }
     toastStore.show('已删除', 'success');

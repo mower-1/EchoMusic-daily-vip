@@ -66,6 +66,9 @@ export const revealDownload = (id: string): Promise<boolean> =>
   window.electron.ipcRenderer.invoke('download:reveal', id);
 
 export const onDownloadUpdate = (listener: (task: DownloadTaskView) => void): (() => void) => {
-  window.electron.ipcRenderer.on('download:update', listener);
-  return () => window.electron.ipcRenderer.off('download:update', listener);
+  // preload 的 ipcRenderer.on 已剥离 event（首参即 task），直接透传即可；
+  // d.ts 用的是原生 ipcRenderer 签名，与实际不符，这里仅做类型断言
+  const wrapped = listener as unknown as (...args: unknown[]) => void;
+  window.electron.ipcRenderer.on('download:update', wrapped);
+  return () => window.electron.ipcRenderer.off('download:update', wrapped);
 };
