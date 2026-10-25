@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@xhacker/kgmwasm':
-        specifier: ^1.0.0
-        version: 1.0.0
       axios:
         specifier: ^1.20.0
         version: 1.20.0(debug@4.4.3(supports-color@7.2.0))(supports-color@7.2.0)
@@ -1476,9 +1473,6 @@ packages:
 
   '@webgpu/types@0.1.72':
     resolution: {integrity: sha512-0cF7RFM2edNoiIS1ODJp0/Gzv4/xSXhwoR0YCza+OWpJWtn4wmo9DvK91aLlH9+uUnwIriP7ZiC3WitmyhuzBw==}
-
-  '@xhacker/kgmwasm@1.0.0':
-    resolution: {integrity: sha512-LnBuEVRJQVyJGJTb0cPZxZDu7Qi4PqDhJLRaRJfG6pSUeZuIoglzHiysyd4XfNHobNnLxG8v1IiNPS/uWwoG0A==}
 
   '@xmldom/xmldom@0.8.11':
     resolution: {integrity: sha512-cQzWCtO6C8TQiYl1ruKNn2U6Ao4o4WBBcbL61yJl84x+j5sOWWFU9X7DpND8XZG3daDppSsigMdfAIl2upQBRw==}
@@ -5431,8 +5425,6 @@ snapshots:
       vue: 3.5.43(typescript@5.9.3)
 
   '@webgpu/types@0.1.72': {}
-
-  '@xhacker/kgmwasm@1.0.0': {}
 
   '@xmldom/xmldom@0.8.11': {}
 

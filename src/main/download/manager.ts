@@ -1,26 +1,16 @@
 import { app } from 'electron';
-import { createWriteStream } from 'fs';
+import { createWriteStream, mkdirSync } from 'fs';
 import { promises as fsp, existsSync } from 'fs';
-import { join, resolve, sep } from 'path';
+import { basename, join, resolve, sep } from 'path';
 import log from 'electron-log';
 import { getMainWindow } from '../window';
 import { getMainAppSettings } from '../storage/settings';
 import { scanLocalFiles } from '../media/fileScanner';
 import { LOCAL_AUDIO_EXTENSIONS } from '../../shared/localMusic';
-import {
-  sniffAudioFormat,
-  isEncryptedFormat,
-  decryptEncryptedAudio,
-  type AudioFormat,
-} from './decrypt';
+import { sniffAudioFormat, warnUnknownFormat, type AudioFormat } from './decrypt';
 
 export type DownloadStatus =
-  | 'queued'
-  | 'downloading'
-  | 'decrypting'
-  | 'done'
-  | 'error'
-  | 'canceled';
+  'queued' | 'downloading' | 'decrypting' | 'done' | 'error' | 'canceled';
 
 export interface DownloadTask {
   id: string;
@@ -53,7 +43,6 @@ const tasks = new Map<string, DownloadTask>();
 const queue: string[] = [];
 const controllers = new Map<string, AbortController>();
 const running = new Set<string>();
-const decryptChain: Promise<unknown> = Promise.resolve();
 
 let counter = 0;
 const nextId = () => `dl_${Date.now().toString(36)}_${(counter++).toString(36)}`;
@@ -74,10 +63,13 @@ const sanitizeName = (value: string): string =>
     .slice(0, 120);
 
 const ensureSaveDir = (dir: string): string => {
-  try {
-    if (!existsSync(dir)) void fsp.mkdir(dir, { recursive: true });
-  } catch {
-    // 目录创建失败在写文件时会再暴露
+  // 同步创建：异步 void mkdir 存在竞态，后续 writeFile 可能早于目录创建完成
+  if (!existsSync(dir)) {
+    try {
+      mkdirSync(dir, { recursive: true });
+    } catch {
+      // 目录创建失败在写文件时会再暴露
+    }
   }
   return dir;
 };
@@ -86,14 +78,6 @@ export const getDefaultSaveDir = (): string => {
   const configured = getMainAppSettings().downloadSaveDir?.trim();
   if (configured) return ensureSaveDir(configured);
   return ensureSaveDir(join(app.getPath('downloads'), '酷狗概念版'));
-};
-
-/** 解密是 CPU 密集操作，串行化避免多任务并发时内存峰值叠加。 */
-const runExclusive = <T>(job: () => Promise<T>): Promise<T> => {
-  const run = decryptChain.then(job, job);
-  // 链上消费掉错误，避免后续任务被跳过
-  decryptChain.catch(() => undefined);
-  return run;
 };
 
 /** 避免重名覆盖：同名时追加 (1)/(2)… */
@@ -160,33 +144,23 @@ async function executeTask(task: DownloadTask, signal: AbortSignal): Promise<voi
 
   if (task.received === 0) throw new Error('下载内容为空');
 
-  // 探测格式：URL 后缀不可信（常见 .mp3 实为 flac）
-  const fileData = await fsp.readFile(tempPath);
-  if (fileData.length < 16) throw new Error('文件过短，无法识别');
-  let format = sniffAudioFormat(fileData.subarray(0, 16));
+  // 探测格式：URL 后缀不可信（常见 .mp3 实为 flac）。
+  // 只读前 16 字节，不必把整首歌读进内存（随后直接重命名临时文件，无需二次写入）。
+  const head = Buffer.alloc(16);
+  const headHandle = await fsp.open(tempPath, 'r');
+  let headBytes = 0;
+  try {
+    headBytes = (await headHandle.read(head, 0, 16, 0)).bytesRead;
+  } finally {
+    await headHandle.close();
+  }
+  if (headBytes < 16) throw new Error('文件过短，无法识别');
+  const format = sniffAudioFormat(head.subarray(0, headBytes));
+  if (format === 'unknown') {
+    // 平台下发的都是明文直链；识别失败时不猜格式，按 .bin 落盘并告警
+    warnUnknownFormat(task.songName);
+  }
   task.format = format;
-
-  let finalData: Uint8Array = fileData;
-  if (isEncryptedFormat(format)) {
-    task.status = 'decrypting';
-    emit(task);
-    log.info(`[Download] 检测到 ${format.toUpperCase()} 加密流，开始解密: ${task.songName}`);
-    finalData = await runExclusive(async () => {
-      const result = await decryptEncryptedAudio(fileData, format as 'kgm' | 'vpr');
-      return result.data;
-    });
-    const sniffed = sniffAudioFormat(finalData.subarray(0, 16));
-    if (sniffed !== 'kgm' && sniffed !== 'vpr' && sniffed !== 'unknown') {
-      format = sniffed;
-      task.format = sniffed;
-    }
-  }
-
-  if (format === 'kgm' || format === 'vpr' || format === 'unknown') {
-    // 解密后仍无法识别：按预期扩展名落盘，保留原始内容供用户检查
-    log.warn(`[Download] 解密后未识别出有效音频头部，按 ${format} 兜底落盘: ${task.songName}`);
-    format = format === 'vpr' ? 'mp3' : 'flac';
-  }
 
   // 酷狗的 title/name 字段本身常是「歌手 - 歌名」或「歌名 - 歌手」格式，与 artist
   // 拼接会重复。落盘前把与 artist 重复的前缀/后缀剥掉
@@ -211,12 +185,13 @@ async function executeTask(task: DownloadTask, signal: AbortSignal): Promise<voi
   const baseName = sanitizeName(
     task.artist && task.artist.trim() !== songTitle ? `${songTitle} - ${task.artist}` : songTitle,
   );
+  // 识别不出容器时按 .bin 落盘，保留原始内容供用户检查
   const ext = format === 'unknown' ? 'bin' : format;
   task.filePath = resolveConflict(join(task.saveDir, `${baseName}.${ext}`));
-  task.filename = task.filePath.slice(task.filePath.lastIndexOf('\\') + 1).split('\\').pop() || '';
+  task.filename = basename(task.filePath);
 
-  await fsp.writeFile(task.filePath, finalData);
-  await fsp.unlink(tempPath).catch(() => undefined);
+  // 临时文件与目标同目录，直接重命名即可（省掉一次整文件读写）
+  await fsp.rename(tempPath, task.filePath);
 
   // 附加文件：歌词 / 封面（失败不影响音频任务状态）
   if (task.lrcContent?.trim()) {
@@ -262,11 +237,9 @@ const pumpQueue = () => {
     running.add(id);
     executeTask(task, controller.signal)
       .catch((error: unknown) => {
-        if (task.status === 'canceled') {
-          // 用户取消，清理半成品
-          fsp.unlink(join(task.saveDir, `${task.hash || task.id}.part`)).catch(() => undefined);
-          return;
-        }
+        // 无论取消还是出错都清理 .part 半成品（失败忽略）
+        fsp.unlink(join(task.saveDir, `${task.hash || task.id}.part`)).catch(() => undefined);
+        if (task.status === 'canceled') return;
         const message = error instanceof Error ? error.message : String(error);
         task.status = 'error';
         task.error = message;
@@ -295,7 +268,9 @@ export function addDownload(params: {
   effect?: string;
 }): DownloadTask {
   const existing = Array.from(tasks.values()).find(
-    (t) => t.hash === params.hash && t.quality === (params.quality || '') &&
+    (t) =>
+      t.hash === params.hash &&
+      t.quality === (params.quality || '') &&
       (t.status === 'queued' || t.status === 'downloading' || t.status === 'decrypting'),
   );
   if (existing) return existing;
@@ -402,7 +377,9 @@ export const scanSaveDir = async (): Promise<ScannedCacheFile[]> => {
 };
 
 /** 从磁盘删除缓存文件；仅允许删除缓存目录内的文件，防止误删任意路径 */
-export const deleteCacheFile = async (filePath: string): Promise<'deleted' | 'not-found' | 'forbidden'> => {
+export const deleteCacheFile = async (
+  filePath: string,
+): Promise<'deleted' | 'not-found' | 'forbidden'> => {
   const normalized = resolve(filePath || '');
   const saveDir = resolve(getDefaultSaveDir());
   if (!normalized.startsWith(saveDir + sep) && normalized !== saveDir) return 'forbidden';
