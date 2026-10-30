@@ -1906,7 +1906,7 @@ watch(
 }
 
 .sidebar-playlist-action:hover {
-  background-color: color-mix(in srgb, var(--color-text-main) 18%, transparent);
+  background-color: transparent;
   box-shadow: none;
 }
 
